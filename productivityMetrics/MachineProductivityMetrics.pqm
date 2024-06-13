@@ -1,0 +1,65 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    TableSchema = loadModule("MachineProductivityMetrics.TableSchema.pqm"),
+    DateTimeRanges = loadModule("DateTimeRanges.pqm"),
+    PaginatedPostRequest = loadModule("ApiClient.pqm")[PaginatedPostRequest],
+    TransformProductivityMetrics = loadModule("ProductivityMetrics.Transform.pqm")[TransformProductivityMetrics],
+    FunctionType = loadModule("MachineProductivityMetrics.FunctionTypes.pqm")[MachineProductivityMetricsType],
+    MachineProductivityMetrics = (machines as table, start as datetimezone, end as datetimezone, resolution as text) as table =>
+        let
+            machineUuids = Table.Column(machines, "uuid"),
+            dateTimeRanges =
+                if resolution = "hourly" then
+                    DateTimeRanges[ToHourlyDateTimeRanges](start, end, resolution)
+                else if resolution = "daily" then
+                    DateTimeRanges[ToDailyDateTimeRanges](start, end)
+                else if resolution = "weekly" then
+                    DateTimeRanges[ToWeeklyDateTimeRanges](start, end)
+                else if resolution = "monthly" then
+                    DateTimeRanges[ToMonthlyDateTimeRanges](start, end)
+                else
+                    error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
+            _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateTimeRanges)),
+            dateTimeRangesLength = List.Count(dateTimeRanges),
+            validatedDateTimeRanges =
+                if dateTimeRangesLength > 31 then
+                    error
+                        "Error: You can only query a maximum of 31 intervals per request. Found "
+                            & Text.From(dateTimeRangesLength)
+                            & "."
+                else
+                    dateTimeRanges,
+            accumulated = List.Accumulate(
+                machineUuids,
+                #table(TableSchema, {}),
+                (state, machineUuid) =>
+                    let
+                        responseData = PaginatedPostRequest(
+                            "/machines/" & machineUuid & "/productivity-metrics",
+                            [
+                                datetime_ranges = validatedDateTimeRanges
+                            ]
+                        ),
+                        responseDataWithMachine = List.Transform(
+                            responseData, (r) => Record.AddField(r, "machine", machineUuid)
+                        )
+                    in
+                        Table.Combine({state, TransformProductivityMetrics(responseDataWithMachine)})
+            )
+        in
+            accumulated,
+    MachineProductivityMetricsCorrectType = Value.ReplaceType(MachineProductivityMetrics, FunctionType)
+in
+    MachineProductivityMetricsCorrectType

@@ -1,0 +1,53 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    TableSchema = loadModule("Variables.TableSchema.pqm"),
+    Table.ChangeType = loadModule("Table.ChangeType.pqm"),
+    TimeseriesData = loadModule("TimeseriesData.pqm"),
+    TimeseriesSingleVariableType = loadModule("TimeseriesData.FunctionTypes.pqm")[TimeseriesSingleVariableType],
+    TransformVariables = (variables as list) as table =>
+        let
+            variablesTable = Table.FromList(variables, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            expandedTable = Table.ExpandRecordColumn(
+                variablesTable,
+                "Column1",
+                {"uuid", "display_name", "machine", "unit", "type", "data_type", "scaling_factor"}
+            ),
+            expandedDisplayName = Table.TransformColumns(
+                expandedTable, {{"display_name", each if _ = null then "" else _, type text}}
+            ),
+            expandedUnit = Table.TransformColumns(
+                expandedDisplayName, {{"unit", each if _ = null then "" else _, type text}}
+            ),
+            expandedScalingFactor = Table.TransformColumns(
+                expandedUnit, {{"scaling_factor", each if _ = null then null else _, type number}}
+            ),
+            variablesWithTimeseries = Table.AddColumn(
+                expandedScalingFactor,
+                "timeseries_data",
+                (row) =>
+                    let
+                        func = (
+                            start as datetimezone, end as datetimezone, resolution as text, resampling_method as text
+                        ) =>
+                            TimeseriesData(Table.FromRecords({row}), start, end, resolution, resampling_method)
+                    in
+                        Value.ReplaceType(func, TimeseriesSingleVariableType)
+            )
+        in
+            Table.ChangeType(variablesWithTimeseries, TableSchema)
+in
+    [
+        TransformVariables = TransformVariables
+    ]

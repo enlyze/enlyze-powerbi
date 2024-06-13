@@ -1,0 +1,1 @@
+let ProductsTableSchema = type table [uuid = text, external_id = text, name = text] in ProductsTableSchema

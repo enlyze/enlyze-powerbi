@@ -1,0 +1,76 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    PaginatedPostRequest = loadModule("ApiClient.pqm")[PaginatedPostRequest],
+    TransformTimeseriesData = loadModule("TimeseriesData.Transform.pqm")[TransformTimeseriesData],
+    TimeseriesDataType = loadModule("TimeseriesData.FunctionTypes.pqm")[TimeseriesDataType],
+    TimeseriesData = (
+        variables as table, start as datetimezone, end as datetimezone, resolution as text, resampling_method as text
+    ) as table =>
+        let
+            resampling_interval_seconds =
+                if resolution = "1m" then
+                    60
+                else if resolution = "10m" then
+                    600
+                else if resolution = "30m " then
+                    1800
+                else if resolution = "1h" then
+                    3600
+                else if resolution = "1d" then
+                    86400
+                else
+                    604800,
+            variablesByMachine = Table.Group(
+                variables, {"machine"}, {{"GroupedVariables", each _, type table [uuid = text, machine = text]}}
+            ),
+            bodyBase = [start = start, end = end, resampling_interval = resampling_interval_seconds],
+            fetchTimeseriesForMachine = (variablesByMachine as table, machineUuid as text) as table =>
+                let
+                    variableCount = Table.RowCount(variablesByMachine),
+                    validatedVariablesByMachine =
+                        if variableCount > 100 then
+                            error
+                                "Error: The number of variables for machine "
+                                    & machineUuid
+                                    & " exceeds the limit of 100."
+                        else
+                            variablesByMachine,
+                    requestBody = Record.Combine(
+                        {
+                            bodyBase,
+                            [
+                                machine = machineUuid,
+                                variables = List.Transform(
+                                    Table.ToRecords(validatedVariablesByMachine),
+                                    each [uuid = _[uuid], resampling_method = resampling_method]
+                                )
+                            ]
+                        }
+                    ),
+                    timeseriesDataPages = PaginatedPostRequest("/timeseries", requestBody, null),
+                    transformedData = TransformTimeseriesData(timeseriesDataPages)
+                in
+                    transformedData,
+            resultRecord = Record.FromList(
+                Table.TransformRows(
+                    variablesByMachine, each fetchTimeseriesForMachine([GroupedVariables], [machine])
+                ),
+                variablesByMachine[machine]
+            )
+        in
+            Table.FromRecords({resultRecord}),
+    TimeseriesDataCorrectType = Value.ReplaceType(TimeseriesData, TimeseriesDataType)
+in
+    TimeseriesDataCorrectType

@@ -1,0 +1,65 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    TableSchema = loadModule("MachineProductivityMetrics.TableSchema.pqm"),
+    Table.ChangeType = loadModule("Table.ChangeType.pqm"),
+    TransformQuantityScrap = loadModule("Quantities.Transform.pqm")[TransformQuantityScrap],
+    TransformQuantityYield = loadModule("Quantities.Transform.pqm")[TransformQuantityYield],
+    TransformMetric = (tbl as table, fieldName as text) as table =>
+        Table.ExpandRecordColumn(
+            tbl, fieldName, {"score", "time_loss"}, {fieldName & "_score", fieldName & "_time_loss"}
+        ),
+    TransformAvailability = (tbl as table) as table => TransformMetric(tbl, "availability"),
+    TransformPerformance = (tbl as table) as table => TransformMetric(tbl, "performance"),
+    TransformQuality = (tbl as table) as table => TransformMetric(tbl, "quality"),
+    TransformProductivity = (tbl as table) as table => TransformMetric(tbl, "productivity"),
+    TransformProductivityMetrics = (productivityMetrics as list) as table =>
+        let
+            productivityMetricsTable = Table.FromList(
+                productivityMetrics, Splitter.SplitByNothing(), null, null, ExtraValues.Error
+            ),
+            namedTable = Value.ReplaceMetadata(
+                productivityMetricsTable, Value.Metadata(productivityMetricsTable) & [Name = "Productivity Metrics"]
+            ),
+            expandedTable = Table.ExpandRecordColumn(
+                namedTable,
+                "Column1",
+                {
+                    "start",
+                    "end",
+                    "machine",
+                    "availability",
+                    "performance",
+                    "quality",
+                    "productivity",
+                    "quantity_scrap",
+                    "quantity_yield"
+                }
+            ),
+            expandedAvailability = TransformAvailability(expandedTable),
+            expandedPerformance = TransformPerformance(expandedAvailability),
+            expandedQuality = TransformQuality(expandedPerformance),
+            expandedProductivity = TransformProductivity(expandedQuality),
+            expandedQuantityScrap = TransformQuantityScrap(expandedProductivity),
+            expandedQuantityYield = TransformQuantityYield(expandedQuantityScrap)
+        in
+            Table.ChangeType(expandedQuantityYield, TableSchema)
+in
+    [
+        TransformProductivityMetrics = TransformProductivityMetrics,
+        TransformAvailability = TransformAvailability,
+        TransformPerformance = TransformPerformance,
+        TransformProductivity = TransformProductivity,
+        TransformQuality = TransformQuality
+    ]

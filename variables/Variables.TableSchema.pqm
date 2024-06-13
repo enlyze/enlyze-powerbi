@@ -1,0 +1,13 @@
+let
+    VariablesTableSchema = type table [
+        display_name = nullable text,
+        #"type" = text,
+        machine = text,
+        uuid = text,
+        unit = nullable text,
+        data_type = text,
+        scaling_factor = nullable number,
+        #"timeseries_data" = any
+    ]
+in
+    VariablesTableSchema

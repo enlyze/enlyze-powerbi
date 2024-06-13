@@ -1,0 +1,23 @@
+let
+    TransformTimeseriesData = (timeseriesDataPages as list) as table =>
+        let
+            transformedPages = List.Transform(
+                timeseriesDataPages,
+                (page) =>
+                    let
+                        columns = page[columns],
+                        records = page[records],
+                        transformedRecords = List.Transform(records, each Record.FromList(_, columns)),
+                        pageTable = Table.FromRecords(transformedRecords)
+                    in
+                        Table.TransformColumns(
+                            pageTable, {{"time", each DateTimeZone.FromText(_), type datetimezone}}
+                        )
+            ),
+            combinedTable = Table.Combine(transformedPages)
+        in
+            combinedTable
+in
+    [
+        TransformTimeseriesData = TransformTimeseriesData
+    ]

@@ -1,0 +1,5 @@
+{
+  "powerquery.sdk.defaultQueryFile": "${workspaceFolder}\\enlyze.query.pq",
+  "powerquery.sdk.defaultExtension": "${workspaceFolder}\\bin\\AnyCPU\\Debug\\enlyze-powerbi.mez",
+  "powerquery.general.mode": "SDK"
+}

@@ -1,0 +1,12 @@
+let
+    TransformQuantity = (tbl as table, fieldName as text) as table =>
+        Table.ExpandRecordColumn(tbl, fieldName, {"unit", "value"}, {fieldName & "_unit", fieldName & "_value"}),
+    TransformQuantityScrap = (tbl as table) as table => TransformQuantity(tbl, "quantity_scrap"),
+    TransformQuantityYield = (tbl as table) as table => TransformQuantity(tbl, "quantity_yield"),
+    TransformQuantityTotal = (tbl as table) as table => TransformQuantity(tbl, "quantity_total")
+in
+    [
+        TransformQuantityScrap = TransformQuantityScrap,
+        TransformQuantityYield = TransformQuantityYield,
+        TransformQuantityTotal = TransformQuantityTotal
+    ]

@@ -1,0 +1,16 @@
+let
+    DowntimesTableSchema = type table [
+        uuid = text,
+        machine = text,
+        #"type" = text,
+        start = datetimezone,
+        end = nullable datetimezone,
+        updated_first_name = nullable text,
+        updated_last_name = nullable text,
+        updated_timestamp = nullable datetimezone,
+        reason_uuid = nullable text,
+        reason_name = nullable text,
+        reason_category = nullable text
+    ]
+in
+    DowntimesTableSchema

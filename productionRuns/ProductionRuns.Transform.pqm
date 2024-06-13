@@ -1,0 +1,73 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    TableSchema = loadModule("ProductionRuns.TableSchema.pqm"),
+    Table.ChangeType = loadModule("Table.ChangeType.pqm"),
+    TransformProductivity = loadModule("ProductivityMetrics.Transform.pqm")[TransformProductivity],
+    TransformAvailability = loadModule("ProductivityMetrics.Transform.pqm")[TransformAvailability],
+    TransformPerformance = loadModule("ProductivityMetrics.Transform.pqm")[TransformPerformance],
+    TransformQuality = loadModule("ProductivityMetrics.Transform.pqm")[TransformQuality],
+    TransformQuantityScrap = loadModule("Quantities.Transform.pqm")[TransformQuantityScrap],
+    TransformQuantityYield = loadModule("Quantities.Transform.pqm")[TransformQuantityYield],
+    TransformQuantityTotal = loadModule("Quantities.Transform.pqm")[TransformQuantityTotal],
+    TransformProductionRuns = (productionRuns as list) as table =>
+        let
+            productionRunsTable = Table.FromList(
+                productionRuns, Splitter.SplitByNothing(), null, null, ExtraValues.Error
+            ),
+            namedTable = Value.ReplaceMetadata(
+                productionRunsTable, Value.Metadata(productionRunsTable) & [Name = "Production Runs"]
+            ),
+            expandedTable = Table.ExpandRecordColumn(
+                namedTable,
+                "Column1",
+                {
+                    "uuid",
+                    "machine",
+                    "production_order",
+                    "product",
+                    "start",
+                    "end",
+                    "average_throughput",
+                    "quantity_total",
+                    "quantity_scrap",
+                    "quantity_yield",
+                    "availability",
+                    "performance",
+                    "quality",
+                    "productivity",
+                    "maximum_run_speed",
+                    "data_quality"
+                }
+            ),
+            expandedAvailability = TransformAvailability(expandedTable),
+            expandedPerformance = TransformPerformance(expandedAvailability),
+            expandedQuality = TransformQuality(expandedPerformance),
+            expandedProductivity = TransformProductivity(expandedQuality),
+            expandedQuantityScrap = TransformQuantityScrap(expandedProductivity),
+            expandedQuantityYield = TransformQuantityYield(expandedQuantityScrap),
+            expandedQuantityTotal = TransformQuantityTotal(expandedQuantityYield),
+            expandedDataQuality = Table.ExpandRecordColumn(
+                expandedQuantityTotal, "data_quality", {"data_coverage", "overlap_percentage", "overlap_time"}
+            ),
+            expandedMaxRunSpeed = Table.ExpandRecordColumn(
+                expandedDataQuality,
+                "maximum_run_speed",
+                {"value", "observation_period_start", "observation_period_end", "unit"},
+                {"max_run_speed_value", "max_run_speed_start", "max_run_speed_end", "max_run_speed_unit"}
+            )
+        in
+            Table.ChangeType(expandedMaxRunSpeed, TableSchema)
+in
+    [TransformProductionRuns = TransformProductionRuns]

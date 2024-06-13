@@ -1,0 +1,1 @@
+let SitesTableSchema = type table [uuid = text, name = text, address = text] in SitesTableSchema

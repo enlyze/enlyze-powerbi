@@ -1,0 +1,43 @@
+let
+    TimeseriesDataType = type function (
+        variables as (type table meta [Documentation.Label = "Variables"]),
+        start as datetimezone,
+        end as datetimezone,
+        resolution as (
+            type text meta [
+                Documentation.Label = "Resolution",
+                Documentation.Description = "Select a resolution.",
+                Documentation.AllowedValues = {"1m", "10m", "30m", "1h", "1d", "1w"}
+            ]
+        ),
+        resampling_method as (
+            type text meta [
+                Documentation.Label = "Resampling Method",
+                Documentation.Description = "Select a resampling method.",
+                Documentation.AllowedValues = {"first", "last", "max", "min", "count", "sum", "avg", "median"}
+            ]
+        )
+    ) as table,
+    TimeseriesSingleVariableType = type function (
+        start as datetimezone,
+        end as datetimezone,
+        resolution as (
+            type text meta [
+                Documentation.Label = "Resolution",
+                Documentation.Description = "Select a resolution.",
+                Documentation.AllowedValues = {"1m", "10m", "30m", "1h", "1d", "1w"}
+            ]
+        ),
+        resampling_method as (
+            type text meta [
+                Documentation.Label = "Resampling Method",
+                Documentation.Description = "Select a resampling method.",
+                Documentation.AllowedValues = {"first", "last", "max", "min", "count", "sum", "avg", "median"}
+            ]
+        )
+    ) as table
+in
+    [
+        TimeseriesDataType = TimeseriesDataType,
+        TimeseriesSingleVariableType = TimeseriesSingleVariableType
+    ]

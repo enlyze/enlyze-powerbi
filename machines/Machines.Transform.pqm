@@ -1,0 +1,40 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    MachineProductivityMetrics = loadModule("MachineProductivityMetrics.pqm"),
+    FunctionTypeSingleMachine = loadModule(
+        "MachineProductivityMetrics.FunctionTypes.pqm"
+    )[MachineProductivityMetricsSingleMachineType],
+    TableSchema = loadModule("Machines.TableSchema.pqm"),
+    Table.ChangeType = loadModule("Table.ChangeType.pqm"),
+    TransformMachines = (machines as list) as table =>
+        let
+            machinesTable = Table.FromList(machines, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            namedTable = Value.ReplaceMetadata(machinesTable, Value.Metadata(machinesTable) & [Name = "Machines"]),
+            expandedTable = Table.ExpandRecordColumn(namedTable, "Column1", {"name", "uuid", "site", "genesis_date"}),
+            columnNames = Table.ColumnNames(expandedTable),
+            machinesWithMetrics = Table.AddColumn(
+                expandedTable,
+                "productivity_metrics",
+                (row) =>
+                    let
+                        func = (start as datetimezone, end as datetimezone, resolution as text) =>
+                            MachineProductivityMetrics(Table.FromRecords({row}), start, end, resolution)
+                    in
+                        Value.ReplaceType(func, FunctionTypeSingleMachine)
+            )
+        in
+            Table.ChangeType(machinesWithMetrics, TableSchema)
+in
+    [TransformMachines = TransformMachines]

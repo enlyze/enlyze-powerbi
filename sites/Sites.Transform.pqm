@@ -1,0 +1,25 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    TableSchema = loadModule("Sites.TableSchema.pqm"),
+    Table.ChangeType = loadModule("Table.ChangeType.pqm"),
+    TransformSites = (sites as list) as table =>
+        let
+            sitesTable = Table.FromList(sites, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            namedTable = Value.ReplaceMetadata(sitesTable, Value.Metadata(sitesTable) & [Name = "Sites"]),
+            expandedTable = Table.ExpandRecordColumn(namedTable, "Column1", {"uuid", "name", "address"})
+        in
+            Table.ChangeType(expandedTable, TableSchema)
+in
+    [TransformSites = TransformSites]

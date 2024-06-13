@@ -1,0 +1,6 @@
+let
+    MachinesTableSchema = type table [
+        name = text, uuid = text, site = text, genesis_date = datetimezone, #"productivity_metrics" = any
+    ]
+in
+    MachinesTableSchema

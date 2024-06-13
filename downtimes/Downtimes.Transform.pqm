@@ -1,0 +1,40 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    TableSchema = loadModule("Downtimes.TableSchema.pqm"),
+    Table.ChangeType = loadModule("Table.ChangeType.pqm"),
+    TimeseriesData = loadModule("TimeseriesData.pqm"),
+    TransformDowntimes = (downtimes as list) as table =>
+        let
+            downtimesTable = Table.FromList(downtimes, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            namedTable = Value.ReplaceMetadata(downtimesTable, Value.Metadata(downtimesTable) & [Name = "Downtimes"]),
+            expandedTable = Table.ExpandRecordColumn(
+                namedTable, "Column1", {"uuid", "machine", "comment", "type", "updated", "reason", "start", "end"}
+            ),
+            expandedUpdated = Table.ExpandRecordColumn(
+                expandedTable,
+                "updated",
+                {"first_name", "last_name", "timestamp"},
+                {"updated_first_name", "updated_last_name", "updated_timestamp"}
+            ),
+            expandedReason = Table.ExpandRecordColumn(
+                expandedUpdated,
+                "reason",
+                {"uuid", "name", "category"},
+                {"reason_uuid", "reason_name", "reason_category"}
+            )
+        in
+            Table.ChangeType(expandedReason, TableSchema)
+in
+    [TransformDowntimes = TransformDowntimes]

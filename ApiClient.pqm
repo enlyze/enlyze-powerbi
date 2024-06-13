@@ -1,0 +1,70 @@
+let
+    BaseUrl = "https://app.enlyze.com/api/v2",
+    CommonHeaders = [
+        #"Content-Type" = "application/json",
+        #"user-agent" = "enlyze-powerbi/1.0.0"
+    ],
+    CreateHeaders = (apiToken as text) as record =>
+        Record.Combine({CommonHeaders, [#"Authorization" = "Bearer " & apiToken]}),
+    FetchPage = (apiPath as text, cursor as nullable text, optional queryParams as nullable record) =>
+        let
+            apiUrl = BaseUrl & apiPath,
+            apiToken = Extension.CurrentCredential()[Key],
+            headers = CreateHeaders(apiToken),
+            combinedQueryParams =
+                if queryParams <> null then
+                    Record.Combine({queryParams, [cursor = cursor]})
+                else
+                    [cursor = cursor],
+            fieldNames = Record.FieldNames(combinedQueryParams),
+            nullValueFields = List.Select(fieldNames, each Record.Field(combinedQueryParams, _) = null),
+            queryParamsNonNull = Record.RemoveFields(combinedQueryParams, nullValueFields),
+            queryString = Uri.BuildQueryString(queryParamsNonNull),
+            apiUrlWithQueryParams = if Text.Length(queryString) > 0 then apiUrl & "?" & queryString else apiUrl,
+            parsedResponse = Json.Document(Web.Contents(apiUrlWithQueryParams, [Headers = headers]))
+        in
+            parsedResponse,
+    FetchPaginated = (apiPath as text, cursor as nullable text, optional queryParams as nullable record) as list =>
+        let
+            currentPage = FetchPage(apiPath, cursor, queryParams),
+            nextCursor = currentPage[metadata][next_cursor],
+            data = currentPage[data],
+            remainingData = if nextCursor = null then {} else @FetchPaginated(apiPath, nextCursor, queryParams)
+        in
+            List.Combine({data, remainingData}),
+    PostRequestPage = (apiPath as text, body as record, cursor as nullable text) as record =>
+        let
+            bodyWithCursor = if cursor <> null then Record.Combine({body, [cursor = cursor]}) else body,
+            url = BaseUrl & apiPath,
+            apiToken = Extension.CurrentCredential()[Key],
+            headers = CreateHeaders(apiToken),
+            response = Web.Contents(
+                url,
+                [
+                    Headers = headers,
+                    Content = Json.FromValue(bodyWithCursor),
+                    ManualStatusHandling = {400, 401, 403, 404, 422, 500}
+                ]
+            ),
+            statusCode = Value.Metadata(response)[Response.Status],
+            parsedResponse =
+                if statusCode = 200 then
+                    Json.Document(response)
+                else
+                    error "HTTP Error: " & Text.From(statusCode) & ". Response body: " & Text.FromBinary(response)
+        in
+            parsedResponse,
+    PaginatedPostRequest = (apiPath as text, body as record, optional cursor as nullable text) as list =>
+        let
+            currentPage = PostRequestPage(apiPath, body, cursor),
+            dataMaybeRecord = currentPage[data],
+            data = if Type.Is(Value.Type(dataMaybeRecord), List.Type) then dataMaybeRecord else {dataMaybeRecord},
+            nextCursor = currentPage[metadata][next_cursor],
+            remainingData = if nextCursor = null then {} else @PaginatedPostRequest(apiPath, body, nextCursor)
+        in
+            List.Combine({data, remainingData})
+in
+    [
+        FetchPaginated = FetchPaginated,
+        PaginatedPostRequest = PaginatedPostRequest
+    ]
