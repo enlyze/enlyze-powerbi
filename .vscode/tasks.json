@@ -1,0 +1,33 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build MEZ",
+            "type": "shell",
+            "command": "${command:powerquery.sdk.tools.RunTestBatteryCommand}",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Deploy to Power BI",
+            "type": "shell",
+            "command": "powershell.exe",
+            "args": [
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/push-extension.ps1"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}
