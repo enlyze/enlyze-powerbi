@@ -3,7 +3,8 @@
 # Configuration
 $projectPath = $PSScriptRoot # Assumes the script is in the project directory
 $mezFileName = "enlyze-powerbi.mez" # Replace with your .mez file name
-$customConnectorsPath = "C:\Mac\Home\Documents\Microsoft Power BI Desktop\Custom Connectors" # Default Power BI custom connectors path
+#$customConnectorsPath = "C:\Mac\Home\Documents\Microsoft Power BI Desktop\Custom Connectors" # Default Power BI custom connectors path
+$customConnectorsPath = "C:\Program Files\Microsoft Power BI Desktop\Custom Connectors" # Default Power BI custom connectors path
 
 
 function Find-PowerBIDesktop {

@@ -15,22 +15,7 @@ shared enlyze.Contents = () =>
             #table(
                 {"Name", "Key", "Data", "ItemKind", "ItemName", "IsLeaf"},
                 {
-                    {
-                        "Downtimes",
-                        "downtimes",
-                        TransformDowntimes(FetchPaginated("/downtimes", null)),
-                        "Table",
-                        "Table",
-                        true
-                    },
-                    {
-                        "Production Runs",
-                        "productionRuns",
-                        TransformProductionRuns(FetchPaginated("/production-runs", null)),
-                        "Table",
-                        "Table",
-                        true
-                    },
+                    
                     {
                         "Machines",
                         "machines",
@@ -39,7 +24,7 @@ shared enlyze.Contents = () =>
                         "Table",
                         true
                     },
-                    {"Sites", "sites", TransformSites(FetchPaginated("/sites", null)), "Table", "Table", true},
+                    //{"Sites", "sites", TransformSites(FetchPaginated("/sites", null)), "Table", "Table", true},
                     {
                         "Machine Productivity Metrics",
                         "machineProductivityMetrics",
@@ -222,36 +207,89 @@ MachineProductivityMetrics = (machines as table, start as datetime, end as datet
                 resolution
             else
                 error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
-        dateRanges =
-            if validatedResolution = "hourly" then
-                ToHourlyDateTimeRanges(start, end, resolution)
-            else if validatedResolution = "daily" then
-                ToDailyDateTimeRanges(start, end)
-            else if validatedResolution = "weekly" then
-                ToWeeklyDateTimeRanges(start, end)
-            else if validatedResolution = "monthly" then
-                ToMonthlyDateTimeRanges(start, end)
-            else
-                error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
-        _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateRanges)),
-        emptyTable = #table(
-            type table [
-                start = datetime,
-                end = datetime,
-                machine = text,
-                availability_score = number,
-                availability_time_loss = number,
-                performance_score = number,
-                performance_time_loss = number,
-                quality_score = number,
-                quality_time_loss = number,
-                productivity_score = number,
-                productivity_time_loss = number
+        fetchData = (currentUuid as text, cursor as nullable text) =>
+        let
+            apiPath = "/machines/" & currentUuid & "/productivity-metrics",
+            body = [
+                datetime_ranges = {
+                    [
+                        start = DateTime.ToText(start, "yyyy-MM-ddTHH:mm:ssZ"),
+                        end = DateTime.ToText(end, "yyyy-MM-ddTHH:mm:ssZ")
+                    ]
+                }
             ],
-            {}
+            apiResponse = Json.Document(Web.Contents("https://app.enlyze.com/api/v2" & apiPath, [
+                Headers = [#"Content-Type"="application/json", #"Authorization"="Bearer " & Extension.CurrentCredential()[Key]],
+                Content = Json.FromValue(body)
+            ])),
+            dataField = if Record.HasFields(apiResponse, "data") and Value.Is(apiResponse[data], type list) 
+                        then Table.FromRecords(apiResponse[data]) 
+                        else error "API schema is not correct"
+        in
+            dataField,
+        filledTable = List.Accumulate(
+            machineUuids,
+            #table(
+                type table [
+                    start = datetime,
+                    end = datetime,
+                    machine = text,
+                    availability_score = nullable number
+                ],
+                {}
+            ),
+            (state, currentUuid) =>
+                let
+                    apiResponseTable = fetchData(currentUuid, null),
+                    newRows = Table.FromRecords(
+                Table.TransformRows(apiResponseTable, each
+                    [
+                        start = DateTime.FromText(_[start]),
+                            end = DateTime.FromText(_[end]),
+                            machine = currentUuid,
+        availability_score = if Record.HasFields(_, "availability") and _[availability] <> null and Record.HasFields(_[availability], "score") 
+                             then _[availability][score] 
+                             else null,
+        availability_time_loss = if Record.HasFields(_, "availability") and _[availability] <> null and Record.HasFields(_[availability], "time_loss") 
+                                  then _[availability][time_loss] 
+                                  else null,
+        performance_score = if Record.HasFields(_, "performance") and _[performance] <> null and Record.HasFields(_[performance], "score") 
+                            then _[performance][score] 
+                            else null,
+        performance_time_loss = if Record.HasFields(_, "performance") and _[performance] <> null and Record.HasFields(_[performance], "time_loss") 
+                                then _[performance][time_loss] 
+                                else null,
+        quality_score = if Record.HasFields(_, "quality") and _[quality] <> null and Record.HasFields(_[quality], "score") 
+                        then _[quality][score] 
+                        else null,
+        quality_time_loss = if Record.HasFields(_, "quality") and _[quality] <> null and Record.HasFields(_[quality], "time_loss") 
+                            then _[quality][time_loss] 
+                            else null,
+        productivity_score = if Record.HasFields(_, "productivity") and _[productivity] <> null and Record.HasFields(_[productivity], "score") 
+                             then _[productivity][score] 
+                             else null,
+        productivity_time_loss = if Record.HasFields(_, "productivity") and _[productivity] <> null and Record.HasFields(_[productivity], "time_loss") 
+                                 then _[productivity][time_loss] 
+                                 else null,
+        quantity_scrap = if Record.HasFields(_, "quantity_scrap") and _[quantity_scrap] <> null and Record.HasFields(_[quantity_scrap], "value") 
+                         then _[quantity_scrap][value] 
+                         else null,
+        quantity_yield = if Record.HasFields(_, "quantity_yield") and _[quantity_yield] <> null and Record.HasFields(_[quantity_yield], "value") 
+                         then _[quantity_yield][value] 
+                         else null
+                    ]
+                
+            ))
+                    
+                in
+                    Table.Combine({state, newRows})
         )
     in
-        emptyTable;
+        filledTable;
+
+
+
+
 
 TransformMachines = (machines as list) as table =>
     let
@@ -267,7 +305,6 @@ TransformMachines = (machines as list) as table =>
         )
     in
         machinesWithMetrics;
-
 TransformSites = (sites as list) as table =>
     let
         sitesTable = Table.FromList(sites, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
