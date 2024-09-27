@@ -138,6 +138,29 @@ FetchPaginated = (apiPath as text, cursor as nullable text) as list =>
     in
         List.Combine({data, remainingData});
 
+PostRequest = (apiPath as text, body as any) as list =>
+    let
+        url = BaseUrl & apiPath,
+        apiToken = Extension.CurrentCredential()[Key],
+        headers = CreateHeaders(apiToken),
+        response = Web.Contents(
+            url,
+            [
+                Headers = headers,
+                Content = Json.FromValue(body),
+                ManualStatusHandling = {400, 401, 403, 404, 422, 500}
+            ]
+        ),
+        statusCode = Value.Metadata(response)[Response.Status],
+        parsedResponse =
+            if statusCode = 200 then
+                Json.Document(response)
+            else
+                error "HTTP Error: " & Text.From(statusCode) & ". Response body: " & Text.FromBinary(response),
+        data = parsedResponse[data]
+    in
+        data;
+
 ToIso8601WithTZ = (dt as datetimezone) as text => DateTimeZone.ToText(dt, [Format = "O", Culture = "en-US"]);
 
 ToHourlyDateTimeRanges = (start as datetimezone, end as datetimezone, resolution as text) as list =>
