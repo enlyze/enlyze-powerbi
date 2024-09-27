@@ -138,82 +138,140 @@ FetchPaginated = (apiPath as text, cursor as nullable text) as list =>
     in
         List.Combine({data, remainingData});
 
-ToHourlyDateTimeRanges = (start as datetime, end as datetime, resolution as text) as list =>
+ToIso8601WithTZ = (dt as datetimezone) as text => DateTimeZone.ToText(dt, [Format = "O", Culture = "en-US"]);
+
+ToHourlyDateTimeRanges = (start as datetimezone, end as datetimezone, resolution as text) as list =>
     let
-        roundToHour = (dt as datetime) =>
-            DateTime.FromText(
-                Text.From(Date.From(dt)) & " " & Text.PadStart(Text.From(Time.Hour(dt)), 2, "0") & ":00:00"
+        roundToHour = (dt as datetimezone) =>
+            #datetimezone(
+                Date.Year(dt),
+                Date.Month(dt),
+                Date.Day(dt),
+                Time.Hour(dt),
+                0,
+                0,
+                DateTimeZone.ZoneHours(dt),
+                DateTimeZone.ZoneMinutes(dt)
             ),
         durationOneHour = #duration(0, 1, 0, 0),
+        addOneHour = (dt as datetimezone) => DateTimeZone.From(dt + durationOneHour),
         roundedStart = roundToHour(start),
-        hourStarts = List.Generate(() => roundedStart, each _ <= end, each _ + durationOneHour),
+        hourStarts = List.Generate(() => roundedStart, each _ <= end, each addOneHour(_)),
         ranges = List.Transform(
             hourStarts,
-            (hourStart) =>
-                [
-                    start = hourStart,
-                    end = if hourStart + durationOneHour > end then end else hourStart + #duration(0, 0, 59, 59)
-                ]
+            (hourStart) => [
+                start = ToIso8601WithTZ(hourStart),
+                end = ToIso8601WithTZ(addOneHour(hourStart))
+            ]
         )
     in
         ranges;
 
-ToDailyDateTimeRanges = (start as datetime, end as datetime) as list =>
+ToDailyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
     let
-        roundToDay = (dt as datetime) => DateTime.FromText(Text.From(Date.From(dt)) & " 00:00:00"),
-        endOfDay = (dt as datetime) => dt + #duration(0, 23, 59, 59),
-        dayStarts = List.Generate(() => roundToDay(start), each _ <= Date.From(end), each Date.AddDays(_, 1)),
+        roundToDay = (dt as datetimezone) =>
+            #datetimezone(
+                Date.Year(dt),
+                Date.Month(dt),
+                Date.Day(dt),
+                0,
+                0,
+                0,
+                DateTimeZone.ZoneHours(dt),
+                DateTimeZone.ZoneMinutes(dt)
+            ),
+        addDay = (dt as datetimezone) => DateTimeZone.From(Date.AddDays(dt, 1)),
+        dayStarts = List.Generate(() => roundToDay(start), each Date.From(_) <= Date.From(end), each addDay(_)),
         ranges = List.Transform(
-            dayStarts,
-            (dayStart) =>
-                [
-                    start = dayStart,
-                    end = if Date.From(dayStart) = Date.From(end) then end else endOfDay(dayStart)
-                ]
+            dayStarts, (dayStart) => [
+                start = ToIso8601WithTZ(dayStart),
+                end = ToIso8601WithTZ(addDay(dayStart))
+            ]
         )
     in
         ranges;
 
-ToWeeklyDateTimeRanges = (start as datetime, end as datetime) as list =>
+ToWeeklyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
     let
-        // Function to round down to the start of the week (Monday 00:00:00)
-        roundToWeekStart = (dt as datetime) =>
+        roundToWeekStart = (dt as datetimezone) =>
             let
                 dayOfWeek = Date.DayOfWeek(Date.From(dt), Day.Monday) + 1,
-                mondayOfWeek = Date.From(dt) - #duration(dayOfWeek - 1, 0, 0, 0)
+                mondayOfWeek = Date.AddDays(Date.From(dt), - (dayOfWeek - 1))
             in
-                DateTime.FromText(Text.From(mondayOfWeek) & " 00:00:00"),
-        // Function to get the end of the week (Sunday 23:59:59)
-        endOfWeek = (dt as datetime) => roundToWeekStart(dt) + #duration(6, 23, 59, 59),
-        weekStarts = List.Generate(() => roundToWeekStart(start), each _ <= end, each _ + #duration(7, 0, 0, 0)),
+                #datetimezone(
+                    Date.Year(mondayOfWeek),
+                    Date.Month(mondayOfWeek),
+                    Date.Day(mondayOfWeek),
+                    0,
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+        endOfWeek = (dt as datetimezone) =>
+            let
+                nextMonday = roundToWeekStart(dt) + #duration(7, 0, 0, 0)
+            in
+                #datetimezone(
+                    Date.Year(nextMonday),
+                    Date.Month(nextMonday),
+                    Date.Day(nextMonday),
+                    0,
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+        weekStarts = List.Generate(
+            () => roundToWeekStart(start), each _ <= end, each DateTimeZone.From(Date.AddDays(_, 7))
+        ),
         ranges = List.Transform(
             weekStarts,
-            (weekStart) =>
-                [
-                    start = weekStart,
-                    end = if Date.From(endOfWeek(weekStart)) >= Date.From(end) then end else endOfWeek(weekStart)
-                ]
+            (weekStart) => [
+                start = ToIso8601WithTZ(weekStart),
+                end = ToIso8601WithTZ(endOfWeek(weekStart))
+            ]
         )
     in
         ranges;
 
-ToMonthlyDateTimeRanges = (start as datetime, end as datetime) as list =>
+ToMonthlyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
     let
-        roundToMonthStart = (dt as datetime) => DateTime.FromText(Text.From(Date.StartOfMonth(dt)) & " 00:00:00"),
-        endOfMonth = (dt as datetime) => DateTime.FromText(Text.From(Date.EndOfMonth(dt)) & " 23:59:59"),
-        monthStarts = List.Generate(() => roundToMonthStart(start), each _ <= end, each Date.AddMonths(_, 1)),
+        roundToMonthStart = (dt as datetimezone) =>
+            #datetimezone(
+                Date.Year(dt), Date.Month(dt), 1, 0, 0, 0, DateTimeZone.ZoneHours(dt), DateTimeZone.ZoneMinutes(dt)
+            ),
+        startOfNextMonth = (dt as datetimezone) =>
+            let
+                nextMonth = Date.AddMonths(Date.From(dt), 1)
+            in
+                #datetimezone(
+                    Date.Year(nextMonth),
+                    Date.Month(nextMonth),
+                    1,
+                    0,
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+        monthStarts = List.Generate(
+            () => roundToMonthStart(start), each _ <= end, each DateTimeZone.From(Date.AddMonths(_, 1))
+        ),
         ranges = List.Transform(
             monthStarts,
             (monthStart) =>
                 [
-                    start = monthStart,
-                    end = if Date.From(endOfMonth(monthStart)) >= Date.From(end) then end else endOfMonth(monthStart)
+                    start = ToIso8601WithTZ(monthStart),
+                    end = ToIso8601WithTZ(
+                        if end <= startOfNextMonth(monthStart) then end else startOfNextMonth(monthStart)
+                    )
                 ]
         )
     in
         ranges;
 
-MachineProductivityMetrics = (machines as table, start as datetime, end as datetime, resolution as text) as table =>
+MachineProductivityMetrics = (machines as table, start as datetimezone, end as datetimezone, resolution as text) as table =>
     let
         machineUuids = Table.Column(machines, "uuid"),
         validResolutions = {"hourly", "daily", "weekly", "monthly"},
