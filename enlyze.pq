@@ -451,3 +451,35 @@ TransformDowntimes = (downtimes as list) as table =>
         )
     in
         expandedReason;
+
+TransformProductivityMetrics = (productivityMetrics as list) as table =>
+    let
+        productivityMetricsTable = Table.FromList(
+            productivityMetrics, Splitter.SplitByNothing(), null, null, ExtraValues.Error
+        ),
+        namedTable = Value.ReplaceMetadata(
+            productivityMetricsTable, Value.Metadata(productivityMetricsTable) & [Name = "Productivity Metrics"]
+        ),
+        expandedTable = Table.ExpandRecordColumn(
+            namedTable,
+            "Column1",
+            {
+                "start",
+                "end",
+                "machine",
+                "availability",
+                "performance",
+                "quality",
+                "productivity",
+                "quantity_scrap",
+                "quantity_yield"
+            }
+        ),
+        expandedAvailability = ExpandAvailability(expandedTable),
+        expandedPerformance = ExpandPerformance(expandedAvailability),
+        expandedQuality = ExpandQuality(expandedPerformance),
+        expandedProductivity = ExpandProductivity(expandedQuality),
+        expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
+        expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap)
+    in
+        expandedQuantityYield;
