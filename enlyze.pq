@@ -357,6 +357,24 @@ TransformSites = (sites as list) as table =>
     in
         expandedTable;
 
+ExpandMetric = (tbl as table, fieldName as text) as table =>
+    Table.ExpandRecordColumn(tbl, fieldName, {"score", "time_loss"}, {fieldName & "_score", fieldName & "_time_loss"});
+
+ExpandQuantity = (tbl as table, fieldName as text) as table =>
+    Table.ExpandRecordColumn(tbl, fieldName, {"unit", "value"}, {fieldName & "_unit", fieldName & "_value"});
+
+ExpandAvailability = (tbl as table) as table => ExpandMetric(tbl, "availability");
+
+ExpandPerformance = (tbl as table) as table => ExpandMetric(tbl, "performance");
+
+ExpandQuality = (tbl as table) as table => ExpandMetric(tbl, "quality");
+
+ExpandProductivity = (tbl as table) as table => ExpandMetric(tbl, "productivity");
+
+ExpandQuantityScrap = (tbl as table) as table => ExpandQuantity(tbl, "quantity_scrap");
+
+ExpandQuantityYield = (tbl as table) as table => ExpandQuantity(tbl, "quantity_yield");
+
 TransformProductionRuns = (productionRuns as list) as table =>
     let
         productionRunsTable = Table.FromList(
@@ -387,50 +405,29 @@ TransformProductionRuns = (productionRuns as list) as table =>
                 "data_quality"
             }
         ),
-        expandedAvailability = Table.ExpandRecordColumn(
-            expandedTable, "availability", {"score", "time_loss"}, {"availability_score", "availability_time_loss"}
-        ),
-        expandedPerformance = Table.ExpandRecordColumn(
-            expandedAvailability, "performance", {"score", "time_loss"}, {
-                "performance_score",
-                "performance_time_loss"
+        expandedAvailability = ExpandAvailability(expandedTable),
+        expandedPerformance = ExpandPerformance(expandedAvailability),
+        expandedQuality = ExpandQuality(expandedPerformance),
+        expandedProductivity = ExpandProductivity(expandedQuality),
+        expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
+        expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap),
+        expandedQuantityTotal = Table.ExpandRecordColumn(
+            expandedQuantityYield, "quantity_total", {"unit", "value"}, {
+                "quantity_total_unit",
+                "quantity_total_value"
             }
         ),
-        expandedProductivity = Table.ExpandRecordColumn(
-            expandedPerformance,
-            "productivity",
-            {"score", "time_loss"},
-            {"productivity_score", "productivity_time_loss"}
-        ),
-        expandedQuality = Table.ExpandRecordColumn(
-            expandedProductivity, "quality", {"score", "time_loss"}, {"quality_score", "quality_time_loss"}
-        ),
         expandedDataQuality = Table.ExpandRecordColumn(
-            expandedQuality, "data_quality", {"data_coverage", "overlap_percentage", "overlap_time"}
+            expandedQuantityTotal, "data_quality", {"data_coverage", "overlap_percentage", "overlap_time"}
         ),
         expandedMaxRunSpeed = Table.ExpandRecordColumn(
             expandedDataQuality,
             "maximum_run_speed",
             {"value", "observation_period_start", "observation_period_end", "unit"},
             {"max_run_speed_value", "max_run_speed_start", "max_run_speed_end", "max_run_speed_unit"}
-        ),
-        expandedQuantityTotal = Table.ExpandRecordColumn(
-            expandedMaxRunSpeed, "quantity_total", {"unit", "value"}, {"quantity_total_unit", "quantity_total_value"}
-        ),
-        expandedQuantityScrap = Table.ExpandRecordColumn(
-            expandedQuantityTotal, "quantity_scrap", {"unit", "value"}, {
-                "quantity_scrap_unit",
-                "quantity_scrap_value"
-            }
-        ),
-        expandedQuantityYield = Table.ExpandRecordColumn(
-            expandedQuantityScrap, "quantity_yield", {"unit", "value"}, {
-                "quantity_yield_unit",
-                "quantity_yield_value"
-            }
         )
     in
-        expandedQuantityYield;
+        expandedMaxRunSpeed;
 
 TransformDowntimes = (downtimes as list) as table =>
     let
