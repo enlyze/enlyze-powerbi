@@ -1,0 +1,169 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    MachineProductivityMetrics = loadModule("MachineProductivityMetrics.pqm"),
+    ExpandMetric = (tbl as table, fieldName as text) as table =>
+        Table.ExpandRecordColumn(
+            tbl, fieldName, {"score", "time_loss"}, {fieldName & "_score", fieldName & "_time_loss"}
+        ),
+    ExpandQuantity = (tbl as table, fieldName as text) as table =>
+        Table.ExpandRecordColumn(tbl, fieldName, {"unit", "value"}, {fieldName & "_unit", fieldName & "_value"}),
+    ExpandAvailability = (tbl as table) as table => ExpandMetric(tbl, "availability"),
+    ExpandPerformance = (tbl as table) as table => ExpandMetric(tbl, "performance"),
+    ExpandQuality = (tbl as table) as table => ExpandMetric(tbl, "quality"),
+    ExpandProductivity = (tbl as table) as table => ExpandMetric(tbl, "productivity"),
+    ExpandQuantityScrap = (tbl as table) as table => ExpandQuantity(tbl, "quantity_scrap"),
+    ExpandQuantityYield = (tbl as table) as table => ExpandQuantity(tbl, "quantity_yield"),
+    TransformMachines = (machines as list) as table =>
+        let
+            machinesTable = Table.FromList(machines, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            namedTable = Value.ReplaceMetadata(machinesTable, Value.Metadata(machinesTable) & [Name = "Machines"]),
+            expandedTable = Table.ExpandRecordColumn(namedTable, "Column1", {"name", "uuid", "site", "genesis_date"}),
+            columnNames = Table.ColumnNames(expandedTable),
+            machinesWithMetrics = Table.AddColumn(
+                expandedTable,
+                "Productivity Metrics",
+                (row) =>
+                    (start as datetimezone, end as datetimezone, resolution as text) =>
+                        MachineProductivityMetrics(Table.FromRecords({row}), start, end, resolution)
+            )
+        in
+            machinesWithMetrics,
+    TransformSites = (sites as list) as table =>
+        let
+            sitesTable = Table.FromList(sites, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            namedTable = Value.ReplaceMetadata(sitesTable, Value.Metadata(sitesTable) & [Name = "Sites"]),
+            expandedTable = Table.ExpandRecordColumn(namedTable, "Column1", {"uuid", "name", "address"})
+        in
+            expandedTable,
+    TransformProductionRuns = (productionRuns as list) as table =>
+        let
+            productionRunsTable = Table.FromList(
+                productionRuns, Splitter.SplitByNothing(), null, null, ExtraValues.Error
+            ),
+            namedTable = Value.ReplaceMetadata(
+                productionRunsTable, Value.Metadata(productionRunsTable) & [Name = "Production Runs"]
+            ),
+            expandedTable = Table.ExpandRecordColumn(
+                namedTable,
+                "Column1",
+                {
+                    "uuid",
+                    "machine",
+                    "production_order",
+                    "product",
+                    "start",
+                    "end",
+                    "average_throughput",
+                    "quantity_total",
+                    "quantity_scrap",
+                    "quantity_yield",
+                    "availability",
+                    "performance",
+                    "quality",
+                    "productivity",
+                    "maximum_run_speed",
+                    "data_quality"
+                }
+            ),
+            expandedAvailability = ExpandAvailability(expandedTable),
+            expandedPerformance = ExpandPerformance(expandedAvailability),
+            expandedQuality = ExpandQuality(expandedPerformance),
+            expandedProductivity = ExpandProductivity(expandedQuality),
+            expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
+            expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap),
+            expandedQuantityTotal = Table.ExpandRecordColumn(
+                expandedQuantityYield,
+                "quantity_total",
+                {"unit", "value"},
+                {"quantity_total_unit", "quantity_total_value"}
+            ),
+            expandedDataQuality = Table.ExpandRecordColumn(
+                expandedQuantityTotal, "data_quality", {"data_coverage", "overlap_percentage", "overlap_time"}
+            ),
+            expandedMaxRunSpeed = Table.ExpandRecordColumn(
+                expandedDataQuality,
+                "maximum_run_speed",
+                {"value", "observation_period_start", "observation_period_end", "unit"},
+                {"max_run_speed_value", "max_run_speed_start", "max_run_speed_end", "max_run_speed_unit"}
+            )
+        in
+            expandedMaxRunSpeed,
+    TransformDowntimes = (downtimes as list) as table =>
+        let
+            downtimesTable = Table.FromList(downtimes, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            namedTable = Value.ReplaceMetadata(downtimesTable, Value.Metadata(downtimesTable) & [Name = "Downtimes"]),
+            expandedTable = Table.ExpandRecordColumn(
+                namedTable, "Column1", {"uuid", "machine", "comment", "type", "updated", "reason", "start", "end"}
+            ),
+            expandedUpdated = Table.ExpandRecordColumn(
+                expandedTable,
+                "updated",
+                {"first_name", "last_name", "timestamp"},
+                {"updated_first_name", "updated_last_name", "updated_timestamp"}
+            ),
+            expandedReason = Table.ExpandRecordColumn(
+                expandedUpdated,
+                "reason",
+                {"uuid", "name", "category"},
+                {"reason_uuid", "reason_name", "reason_category"}
+            )
+        in
+            expandedReason,
+    TransformProductivityMetrics = (productivityMetrics as list) as table =>
+        let
+            productivityMetricsTable = Table.FromList(
+                productivityMetrics, Splitter.SplitByNothing(), null, null, ExtraValues.Error
+            ),
+            namedTable = Value.ReplaceMetadata(
+                productivityMetricsTable, Value.Metadata(productivityMetricsTable) & [Name = "Productivity Metrics"]
+            ),
+            expandedTable = Table.ExpandRecordColumn(
+                namedTable,
+                "Column1",
+                {
+                    "start",
+                    "end",
+                    "machine",
+                    "availability",
+                    "performance",
+                    "quality",
+                    "productivity",
+                    "quantity_scrap",
+                    "quantity_yield"
+                }
+            ),
+            expandedAvailability = ExpandAvailability(expandedTable),
+            expandedPerformance = ExpandPerformance(expandedAvailability),
+            expandedQuality = ExpandQuality(expandedPerformance),
+            expandedProductivity = ExpandProductivity(expandedQuality),
+            expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
+            expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap),
+            localizedTable = Table.TransformColumns(
+                expandedQuantityYield,
+                {
+                    {"start", each DateTimeZone.ToLocal(DateTimeZone.From(_))},
+                    {"end", each DateTimeZone.ToLocal(DateTimeZone.From(_))}
+                }
+            )
+        in
+            localizedTable
+in
+    [
+        TransformMachines = TransformMachines,
+        TransformDowntimes = TransformDowntimes,
+        TransformProductionRuns = TransformProductionRuns,
+        TransformSites = TransformSites,
+        TransformProductivityMetrics = TransformProductivityMetrics
+    ]
