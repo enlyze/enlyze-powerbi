@@ -303,7 +303,7 @@ MachineProductivityMetrics = (machines as table, start as datetimezone, end as d
                 resolution
             else
                 error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
-        dateRanges =
+        dateTimeRanges =
             if validatedResolution = "hourly" then
                 ToHourlyDateTimeRanges(start, end, resolution)
             else if validatedResolution = "daily" then
@@ -314,25 +314,36 @@ MachineProductivityMetrics = (machines as table, start as datetimezone, end as d
                 ToMonthlyDateTimeRanges(start, end)
             else
                 error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
-        _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateRanges)),
-        emptyTable = #table(
-            type table [
-                start = datetime,
-                end = datetime,
-                machine = text,
-                availability_score = number,
-                availability_time_loss = number,
-                performance_score = number,
-                performance_time_loss = number,
-                quality_score = number,
-                quality_time_loss = number,
-                productivity_score = number,
-                productivity_time_loss = number
-            ],
-            {}
+        _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateTimeRanges)),
+        accumulated = List.Accumulate(
+            machineUuids,
+            #table(
+                {
+                    "start",
+                    "end",
+                    "machine",
+                    "availability",
+                    "performance",
+                    "quality",
+                    "productivity",
+                    "quantity_scrap",
+                    "quantity_yield"
+                },
+                {}
+            ),
+            (state, machineUuid) =>
+                let
+                    responseData = PostRequest(
+                        "/machines/" & machineUuid & "/productivity-metrics", [datetime_ranges = dateTimeRanges]
+                    ),
+                    responseDataWithMachine = List.Transform(
+                        responseData, (r) => Record.AddField(r, "machine", machineUuid)
+                    )
+                in
+                    Table.Combine({state, TransformProductivityMetrics(responseDataWithMachine)})
         )
     in
-        emptyTable;
+        accumulated;
 
 TransformMachines = (machines as list) as table =>
     let
