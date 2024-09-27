@@ -95,7 +95,7 @@ enlyze.Icons = [
 ];
 
 Table.ToNavigationTable = (
-    table as table,
+    tbl as table,
     keyColumns as list,
     nameColumn as text,
     dataColumn as text,
@@ -104,7 +104,7 @@ Table.ToNavigationTable = (
     isLeafColumn as text
 ) as table =>
     let
-        tableType = Value.Type(table),
+        tableType = Value.Type(tbl),
         newTableType = Type.AddTableKey(tableType, keyColumns, true) meta [
             NavigationTable.NameColumn = nameColumn,
             NavigationTable.DataColumn = dataColumn,
@@ -112,7 +112,7 @@ Table.ToNavigationTable = (
             Preview.DelayColumn = itemNameColumn,
             NavigationTable.IsLeafColumn = isLeafColumn
         ],
-        navigationTable = Value.ReplaceType(table, newTableType)
+        navigationTable = Value.ReplaceType(tbl, newTableType)
     in
         navigationTable;
 
