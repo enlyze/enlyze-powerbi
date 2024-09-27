@@ -161,7 +161,7 @@ PostRequest = (apiPath as text, body as any) as list =>
     in
         data;
 
-ToIso8601WithTZ = (dt as datetimezone) as text => DateTimeZone.ToText(dt, [Format = "O", Culture = "en-US"]);
+ToIso8601 = (dt as datetimezone) as text => DateTimeZone.ToText(dt, [Format = "O", Culture = "en-US"]);
 
 ToHourlyDateTimeRanges = (start as datetimezone, end as datetimezone, resolution as text) as list =>
     let
@@ -181,10 +181,9 @@ ToHourlyDateTimeRanges = (start as datetimezone, end as datetimezone, resolution
         roundedStart = roundToHour(start),
         hourStarts = List.Generate(() => roundedStart, each _ <= end, each addOneHour(_)),
         ranges = List.Transform(
-            hourStarts,
-            (hourStart) => [
-                start = ToIso8601WithTZ(hourStart),
-                end = ToIso8601WithTZ(addOneHour(hourStart))
+            hourStarts, (hourStart) => [
+                start = ToIso8601(hourStart),
+                end = ToIso8601(addOneHour(hourStart))
             ]
         )
     in
@@ -207,8 +206,8 @@ ToDailyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
         dayStarts = List.Generate(() => roundToDay(start), each Date.From(_) <= Date.From(end), each addDay(_)),
         ranges = List.Transform(
             dayStarts, (dayStart) => [
-                start = ToIso8601WithTZ(dayStart),
-                end = ToIso8601WithTZ(addDay(dayStart))
+                start = ToIso8601(dayStart),
+                end = ToIso8601(addDay(dayStart))
             ]
         )
     in
@@ -249,10 +248,9 @@ ToWeeklyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
             () => roundToWeekStart(start), each _ <= end, each DateTimeZone.From(Date.AddDays(_, 7))
         ),
         ranges = List.Transform(
-            weekStarts,
-            (weekStart) => [
-                start = ToIso8601WithTZ(weekStart),
-                end = ToIso8601WithTZ(endOfWeek(weekStart))
+            weekStarts, (weekStart) => [
+                start = ToIso8601(weekStart),
+                end = ToIso8601(endOfWeek(weekStart))
             ]
         )
     in
@@ -285,10 +283,8 @@ ToMonthlyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =
             monthStarts,
             (monthStart) =>
                 [
-                    start = ToIso8601WithTZ(monthStart),
-                    end = ToIso8601WithTZ(
-                        if end <= startOfNextMonth(monthStart) then end else startOfNextMonth(monthStart)
-                    )
+                    start = ToIso8601(monthStart),
+                    end = ToIso8601(if end <= startOfNextMonth(monthStart) then end else startOfNextMonth(monthStart))
                 ]
         )
     in
