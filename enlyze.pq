@@ -8,6 +8,24 @@ CommonHeaders = [
     #"user-agent" = "enlyze-powerbi/1.0.0"
 ];
 
+ProductivityMetricsTableSchema = type table [
+    start = datetimezone,
+    end = datetimezone,
+    machine = text,
+    availability_score = nullable number,
+    availability_time_loss = nullable number,
+    performance_score = nullable number,
+    performance_time_loss = nullable number,
+    quality_score = nullable number,
+    quality_time_loss = nullable number,
+    productivity_score = nullable number,
+    productivity_time_loss = nullable number,
+    quantity_scrap_value = nullable number,
+    quantity_scrap_unit = nullable text,
+    quantity_yield_value = nullable number,
+    quantity_yield_unit = nullable text
+];
+
 [DataSource.Kind = "enlyze", Publish = "enlyze.Publish"]
 shared enlyze.Contents = () =>
     let
@@ -95,7 +113,7 @@ enlyze.Icons = [
 ];
 
 Table.ToNavigationTable = (
-    table as table,
+    tbl as table,
     keyColumns as list,
     nameColumn as text,
     dataColumn as text,
@@ -104,7 +122,7 @@ Table.ToNavigationTable = (
     isLeafColumn as text
 ) as table =>
     let
-        tableType = Value.Type(table),
+        tableType = Value.Type(tbl),
         newTableType = Type.AddTableKey(tableType, keyColumns, true) meta [
             NavigationTable.NameColumn = nameColumn,
             NavigationTable.DataColumn = dataColumn,
@@ -112,7 +130,7 @@ Table.ToNavigationTable = (
             Preview.DelayColumn = itemNameColumn,
             NavigationTable.IsLeafColumn = isLeafColumn
         ],
-        navigationTable = Value.ReplaceType(table, newTableType)
+        navigationTable = Value.ReplaceType(tbl, newTableType)
     in
         navigationTable;
 
@@ -138,82 +156,159 @@ FetchPaginated = (apiPath as text, cursor as nullable text) as list =>
     in
         List.Combine({data, remainingData});
 
-ToHourlyDateTimeRanges = (start as datetime, end as datetime, resolution as text) as list =>
+PostRequest = (apiPath as text, body as any) as list =>
     let
-        roundToHour = (dt as datetime) =>
-            DateTime.FromText(
-                Text.From(Date.From(dt)) & " " & Text.PadStart(Text.From(Time.Hour(dt)), 2, "0") & ":00:00"
+        url = BaseUrl & apiPath,
+        apiToken = Extension.CurrentCredential()[Key],
+        headers = CreateHeaders(apiToken),
+        response = Web.Contents(
+            url,
+            [
+                Headers = headers,
+                Content = Json.FromValue(body),
+                ManualStatusHandling = {400, 401, 403, 404, 422, 500}
+            ]
+        ),
+        statusCode = Value.Metadata(response)[Response.Status],
+        parsedResponse =
+            if statusCode = 200 then
+                Json.Document(response)
+            else
+                error "HTTP Error: " & Text.From(statusCode) & ". Response body: " & Text.FromBinary(response),
+        data = parsedResponse[data]
+    in
+        data;
+
+ToIso8601 = (dt as datetimezone) as text => DateTimeZone.ToText(dt, [Format = "O", Culture = "en-US"]);
+
+ToHourlyDateTimeRanges = (start as datetimezone, end as datetimezone, resolution as text) as list =>
+    let
+        roundToHour = (dt as datetimezone) =>
+            #datetimezone(
+                Date.Year(dt),
+                Date.Month(dt),
+                Date.Day(dt),
+                Time.Hour(dt),
+                0,
+                0,
+                DateTimeZone.ZoneHours(dt),
+                DateTimeZone.ZoneMinutes(dt)
             ),
         durationOneHour = #duration(0, 1, 0, 0),
+        addOneHour = (dt as datetimezone) => DateTimeZone.From(dt + durationOneHour),
         roundedStart = roundToHour(start),
-        hourStarts = List.Generate(() => roundedStart, each _ <= end, each _ + durationOneHour),
+        hourStarts = List.Generate(() => roundedStart, each _ <= end, each addOneHour(_)),
         ranges = List.Transform(
-            hourStarts,
-            (hourStart) =>
-                [
-                    start = hourStart,
-                    end = if hourStart + durationOneHour > end then end else hourStart + #duration(0, 0, 59, 59)
-                ]
+            hourStarts, (hourStart) => [
+                start = ToIso8601(hourStart),
+                end = ToIso8601(addOneHour(hourStart))
+            ]
         )
     in
         ranges;
 
-ToDailyDateTimeRanges = (start as datetime, end as datetime) as list =>
+ToDailyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
     let
-        roundToDay = (dt as datetime) => DateTime.FromText(Text.From(Date.From(dt)) & " 00:00:00"),
-        endOfDay = (dt as datetime) => dt + #duration(0, 23, 59, 59),
-        dayStarts = List.Generate(() => roundToDay(start), each _ <= Date.From(end), each Date.AddDays(_, 1)),
+        roundToDay = (dt as datetimezone) =>
+            #datetimezone(
+                Date.Year(dt),
+                Date.Month(dt),
+                Date.Day(dt),
+                0,
+                0,
+                0,
+                DateTimeZone.ZoneHours(dt),
+                DateTimeZone.ZoneMinutes(dt)
+            ),
+        addDay = (dt as datetimezone) => DateTimeZone.From(Date.AddDays(dt, 1)),
+        dayStarts = List.Generate(() => roundToDay(start), each Date.From(_) <= Date.From(end), each addDay(_)),
         ranges = List.Transform(
-            dayStarts,
-            (dayStart) =>
-                [
-                    start = dayStart,
-                    end = if Date.From(dayStart) = Date.From(end) then end else endOfDay(dayStart)
-                ]
+            dayStarts, (dayStart) => [
+                start = ToIso8601(dayStart),
+                end = ToIso8601(addDay(dayStart))
+            ]
         )
     in
         ranges;
 
-ToWeeklyDateTimeRanges = (start as datetime, end as datetime) as list =>
+ToWeeklyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
     let
-        // Function to round down to the start of the week (Monday 00:00:00)
-        roundToWeekStart = (dt as datetime) =>
+        roundToWeekStart = (dt as datetimezone) =>
             let
                 dayOfWeek = Date.DayOfWeek(Date.From(dt), Day.Monday) + 1,
-                mondayOfWeek = Date.From(dt) - #duration(dayOfWeek - 1, 0, 0, 0)
+                mondayOfWeek = Date.AddDays(Date.From(dt), - (dayOfWeek - 1))
             in
-                DateTime.FromText(Text.From(mondayOfWeek) & " 00:00:00"),
-        // Function to get the end of the week (Sunday 23:59:59)
-        endOfWeek = (dt as datetime) => roundToWeekStart(dt) + #duration(6, 23, 59, 59),
-        weekStarts = List.Generate(() => roundToWeekStart(start), each _ <= end, each _ + #duration(7, 0, 0, 0)),
+                #datetimezone(
+                    Date.Year(mondayOfWeek),
+                    Date.Month(mondayOfWeek),
+                    Date.Day(mondayOfWeek),
+                    0,
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+        endOfWeek = (dt as datetimezone) =>
+            let
+                nextMonday = roundToWeekStart(dt) + #duration(7, 0, 0, 0)
+            in
+                #datetimezone(
+                    Date.Year(nextMonday),
+                    Date.Month(nextMonday),
+                    Date.Day(nextMonday),
+                    0,
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+        weekStarts = List.Generate(
+            () => roundToWeekStart(start), each _ <= end, each DateTimeZone.From(Date.AddDays(_, 7))
+        ),
         ranges = List.Transform(
-            weekStarts,
-            (weekStart) =>
-                [
-                    start = weekStart,
-                    end = if Date.From(endOfWeek(weekStart)) >= Date.From(end) then end else endOfWeek(weekStart)
-                ]
+            weekStarts, (weekStart) => [
+                start = ToIso8601(weekStart),
+                end = ToIso8601(endOfWeek(weekStart))
+            ]
         )
     in
         ranges;
 
-ToMonthlyDateTimeRanges = (start as datetime, end as datetime) as list =>
+ToMonthlyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
     let
-        roundToMonthStart = (dt as datetime) => DateTime.FromText(Text.From(Date.StartOfMonth(dt)) & " 00:00:00"),
-        endOfMonth = (dt as datetime) => DateTime.FromText(Text.From(Date.EndOfMonth(dt)) & " 23:59:59"),
-        monthStarts = List.Generate(() => roundToMonthStart(start), each _ <= end, each Date.AddMonths(_, 1)),
+        roundToMonthStart = (dt as datetimezone) =>
+            #datetimezone(
+                Date.Year(dt), Date.Month(dt), 1, 0, 0, 0, DateTimeZone.ZoneHours(dt), DateTimeZone.ZoneMinutes(dt)
+            ),
+        startOfNextMonth = (dt as datetimezone) =>
+            let
+                nextMonth = Date.AddMonths(Date.From(dt), 1)
+            in
+                #datetimezone(
+                    Date.Year(nextMonth),
+                    Date.Month(nextMonth),
+                    1,
+                    0,
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+        monthStarts = List.Generate(
+            () => roundToMonthStart(start), each _ <= end, each DateTimeZone.From(Date.AddMonths(_, 1))
+        ),
         ranges = List.Transform(
             monthStarts,
             (monthStart) =>
                 [
-                    start = monthStart,
-                    end = if Date.From(endOfMonth(monthStart)) >= Date.From(end) then end else endOfMonth(monthStart)
+                    start = ToIso8601(monthStart),
+                    end = ToIso8601(if end <= startOfNextMonth(monthStart) then end else startOfNextMonth(monthStart))
                 ]
         )
     in
         ranges;
 
-MachineProductivityMetrics = (machines as table, start as datetime, end as datetime, resolution as text) as table =>
+MachineProductivityMetrics = (machines as table, start as datetimezone, end as datetimezone, resolution as text) as table =>
     let
         machineUuids = Table.Column(machines, "uuid"),
         validResolutions = {"hourly", "daily", "weekly", "monthly"},
@@ -222,7 +317,7 @@ MachineProductivityMetrics = (machines as table, start as datetime, end as datet
                 resolution
             else
                 error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
-        dateRanges =
+        dateTimeRanges =
             if validatedResolution = "hourly" then
                 ToHourlyDateTimeRanges(start, end, resolution)
             else if validatedResolution = "daily" then
@@ -233,25 +328,23 @@ MachineProductivityMetrics = (machines as table, start as datetime, end as datet
                 ToMonthlyDateTimeRanges(start, end)
             else
                 error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
-        _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateRanges)),
-        emptyTable = #table(
-            type table [
-                start = datetime,
-                end = datetime,
-                machine = text,
-                availability_score = number,
-                availability_time_loss = number,
-                performance_score = number,
-                performance_time_loss = number,
-                quality_score = number,
-                quality_time_loss = number,
-                productivity_score = number,
-                productivity_time_loss = number
-            ],
-            {}
+        _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateTimeRanges)),
+        accumulated = List.Accumulate(
+            machineUuids,
+            #table(ProductivityMetricsTableSchema, {}),
+            (state, machineUuid) =>
+                let
+                    responseData = PostRequest(
+                        "/machines/" & machineUuid & "/productivity-metrics", [datetime_ranges = dateTimeRanges]
+                    ),
+                    responseDataWithMachine = List.Transform(
+                        responseData, (r) => Record.AddField(r, "machine", machineUuid)
+                    )
+                in
+                    Table.Combine({state, TransformProductivityMetrics(responseDataWithMachine)})
         )
     in
-        emptyTable;
+        accumulated;
 
 TransformMachines = (machines as list) as table =>
     let
@@ -275,6 +368,24 @@ TransformSites = (sites as list) as table =>
         expandedTable = Table.ExpandRecordColumn(namedTable, "Column1", {"uuid", "name", "address"})
     in
         expandedTable;
+
+ExpandMetric = (tbl as table, fieldName as text) as table =>
+    Table.ExpandRecordColumn(tbl, fieldName, {"score", "time_loss"}, {fieldName & "_score", fieldName & "_time_loss"});
+
+ExpandQuantity = (tbl as table, fieldName as text) as table =>
+    Table.ExpandRecordColumn(tbl, fieldName, {"unit", "value"}, {fieldName & "_unit", fieldName & "_value"});
+
+ExpandAvailability = (tbl as table) as table => ExpandMetric(tbl, "availability");
+
+ExpandPerformance = (tbl as table) as table => ExpandMetric(tbl, "performance");
+
+ExpandQuality = (tbl as table) as table => ExpandMetric(tbl, "quality");
+
+ExpandProductivity = (tbl as table) as table => ExpandMetric(tbl, "productivity");
+
+ExpandQuantityScrap = (tbl as table) as table => ExpandQuantity(tbl, "quantity_scrap");
+
+ExpandQuantityYield = (tbl as table) as table => ExpandQuantity(tbl, "quantity_yield");
 
 TransformProductionRuns = (productionRuns as list) as table =>
     let
@@ -306,50 +417,29 @@ TransformProductionRuns = (productionRuns as list) as table =>
                 "data_quality"
             }
         ),
-        expandedAvailability = Table.ExpandRecordColumn(
-            expandedTable, "availability", {"score", "time_loss"}, {"availability_score", "availability_time_loss"}
-        ),
-        expandedPerformance = Table.ExpandRecordColumn(
-            expandedAvailability, "performance", {"score", "time_loss"}, {
-                "performance_score",
-                "performance_time_loss"
+        expandedAvailability = ExpandAvailability(expandedTable),
+        expandedPerformance = ExpandPerformance(expandedAvailability),
+        expandedQuality = ExpandQuality(expandedPerformance),
+        expandedProductivity = ExpandProductivity(expandedQuality),
+        expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
+        expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap),
+        expandedQuantityTotal = Table.ExpandRecordColumn(
+            expandedQuantityYield, "quantity_total", {"unit", "value"}, {
+                "quantity_total_unit",
+                "quantity_total_value"
             }
         ),
-        expandedProductivity = Table.ExpandRecordColumn(
-            expandedPerformance,
-            "productivity",
-            {"score", "time_loss"},
-            {"productivity_score", "productivity_time_loss"}
-        ),
-        expandedQuality = Table.ExpandRecordColumn(
-            expandedProductivity, "quality", {"score", "time_loss"}, {"quality_score", "quality_time_loss"}
-        ),
         expandedDataQuality = Table.ExpandRecordColumn(
-            expandedQuality, "data_quality", {"data_coverage", "overlap_percentage", "overlap_time"}
+            expandedQuantityTotal, "data_quality", {"data_coverage", "overlap_percentage", "overlap_time"}
         ),
         expandedMaxRunSpeed = Table.ExpandRecordColumn(
             expandedDataQuality,
             "maximum_run_speed",
             {"value", "observation_period_start", "observation_period_end", "unit"},
             {"max_run_speed_value", "max_run_speed_start", "max_run_speed_end", "max_run_speed_unit"}
-        ),
-        expandedQuantityTotal = Table.ExpandRecordColumn(
-            expandedMaxRunSpeed, "quantity_total", {"unit", "value"}, {"quantity_total_unit", "quantity_total_value"}
-        ),
-        expandedQuantityScrap = Table.ExpandRecordColumn(
-            expandedQuantityTotal, "quantity_scrap", {"unit", "value"}, {
-                "quantity_scrap_unit",
-                "quantity_scrap_value"
-            }
-        ),
-        expandedQuantityYield = Table.ExpandRecordColumn(
-            expandedQuantityScrap, "quantity_yield", {"unit", "value"}, {
-                "quantity_yield_unit",
-                "quantity_yield_value"
-            }
         )
     in
-        expandedQuantityYield;
+        expandedMaxRunSpeed;
 
 TransformDowntimes = (downtimes as list) as table =>
     let
@@ -373,3 +463,236 @@ TransformDowntimes = (downtimes as list) as table =>
         )
     in
         expandedReason;
+
+TransformProductivityMetrics = (productivityMetrics as list) as table =>
+    let
+        productivityMetricsTable = Table.FromList(
+            productivityMetrics, Splitter.SplitByNothing(), null, null, ExtraValues.Error
+        ),
+        namedTable = Value.ReplaceMetadata(
+            productivityMetricsTable, Value.Metadata(productivityMetricsTable) & [Name = "Productivity Metrics"]
+        ),
+        expandedTable = Table.ExpandRecordColumn(
+            namedTable,
+            "Column1",
+            {
+                "start",
+                "end",
+                "machine",
+                "availability",
+                "performance",
+                "quality",
+                "productivity",
+                "quantity_scrap",
+                "quantity_yield"
+            }
+        ),
+        expandedAvailability = ExpandAvailability(expandedTable),
+        expandedPerformance = ExpandPerformance(expandedAvailability),
+        expandedQuality = ExpandQuality(expandedPerformance),
+        expandedProductivity = ExpandProductivity(expandedQuality),
+        expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
+        expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap),
+        localizedTable = Table.TransformColumns(
+            expandedQuantityYield,
+            {
+                {"start", each DateTimeZone.ToLocal(DateTimeZone.From(_))},
+                {"end", each DateTimeZone.ToLocal(DateTimeZone.From(_))}
+            }
+        )
+    in
+        Table.ChangeType(localizedTable, ProductivityMetricsTableSchema);
+
+// table should be an actual Table.Type, or a List.Type of Records
+Table.ChangeType = (table, tableType as type) as nullable table =>
+    // we only operate on table types
+    if (not Type.Is(tableType, type table)) then
+        error "type argument should be a table type"
+    else
+    // if we have a null value, just return it
+    if (table = null) then
+        table
+    else
+        let
+            columnsForType = Type.RecordFields(Type.TableRow(tableType)),
+            columnsAsTable = Record.ToTable(columnsForType),
+            schema = Table.ExpandRecordColumn(columnsAsTable, "Value", {"Type"}, {"Type"}),
+            previousMeta = Value.Metadata(tableType),
+            // make sure we have a table
+            parameterType = Value.Type(table),
+            _table =
+                if (Type.Is(parameterType, type table)) then
+                    table
+                else if (Type.Is(parameterType, type list)) then
+                    let
+                        asTable = Table.FromList(table, Splitter.SplitByNothing(), {"Column1"}),
+                        firstValueType = Value.Type(Table.FirstValue(asTable, null)),
+                        result =
+                        // if the member is a record (as expected), then expand it.
+                        if (Type.Is(firstValueType, type record)) then
+                            Table.ExpandRecordColumn(asTable, "Column1", schema[Name])
+                        else
+                            error
+                                Error.Record(
+                                    "Error.Parameter",
+                                    "table argument is a list, but not a list of records",
+                                    [
+                                        ValueType = firstValueType
+                                    ]
+                                )
+                    in
+                        if (List.IsEmpty(table)) then
+                            #table({"a"}, {})
+                        else
+                            result
+                else
+                    error
+                        Error.Record(
+                            "Error.Parameter",
+                            "table argument should be a table or list of records",
+                            [
+                                ValueType = parameterType
+                            ]
+                        ),
+            reordered = Table.SelectColumns(_table, schema[Name], MissingField.UseNull),
+            // process primitive values - this calls Table.TransformColumnTypes
+            map = (t) =>
+                if Type.Is(t, type table) or Type.Is(t, type list) or Type.Is(t, type record) or t = type any then
+                    null
+                else
+                    t,
+            mapped = Table.TransformColumns(schema, {"Type", map}),
+            omitted = Table.SelectRows(mapped, each [Type] <> null),
+            existingColumns = Table.ColumnNames(reordered),
+            removeMissing = Table.SelectRows(omitted, each List.Contains(existingColumns, [Name])),
+            primativeTransforms = Table.ToRows(removeMissing),
+            changedPrimatives = Table.TransformColumnTypes(reordered, primativeTransforms),
+            // Get the list of transforms we use for Record types
+            recordColumns = Table.SelectRows(schema, each Type.Is([Type], type record)),
+            recordTypeTransformations = Table.AddColumn(
+                recordColumns, "RecordTransformations", each (r) => Record.ChangeType(r, [Type]), type function
+            ),
+            recordChanges = Table.ToRows(
+                Table.SelectColumns(recordTypeTransformations, {"Name", "RecordTransformations"})
+            ),
+            // Get the list of transforms we use for List types
+            listColumns = Table.SelectRows(schema, each Type.Is([Type], type list)),
+            listTransforms = Table.AddColumn(
+                listColumns, "ListTransformations", each (t) => List.ChangeType(t, [Type]), Function.Type
+            ),
+            listChanges = Table.ToRows(Table.SelectColumns(listTransforms, {"Name", "ListTransformations"})),
+            // Get the list of transforms we use for Table types
+            tableColumns = Table.SelectRows(schema, each Type.Is([Type], type table)),
+            tableTransforms = Table.AddColumn(
+                tableColumns, "TableTransformations", each (t) => @Table.ChangeType(t, [Type]), Function.Type
+            ),
+            tableChanges = Table.ToRows(Table.SelectColumns(tableTransforms, {"Name", "TableTransformations"})),
+            // Perform all of our transformations
+            allColumnTransforms = recordChanges & listChanges & tableChanges,
+            changedRecordTypes =
+                if (List.IsEmpty(allColumnTransforms)) then
+                    changedPrimatives
+                else
+                    Table.TransformColumns(changedPrimatives, allColumnTransforms, null, MissingField.Ignore),
+            // set final type
+            withType = Value.ReplaceType(changedRecordTypes, tableType)
+        in
+            if (List.IsEmpty(Record.FieldNames(columnsForType))) then
+                table
+            else
+                withType meta previousMeta;
+
+// If given a generic record type (no predefined fields), the original record is returned
+Record.ChangeType = (record as record, recordType as type) =>
+    let
+        // record field format is [ fieldName = [ Type = type, Optional = logical], ... ]
+        fields =
+            try
+                Type.RecordFields(recordType)
+            otherwise
+                error "Record.ChangeType: failed to get record fields. Is this a record type?",
+        fieldNames = Record.FieldNames(fields),
+        fieldTable = Record.ToTable(fields),
+        optionalFields = Table.SelectRows(fieldTable, each[Value][Optional])[Name],
+        requiredFields = List.Difference(fieldNames, optionalFields),
+        // make sure all required fields exist
+        withRequired = Record.SelectFields(record, requiredFields, MissingField.UseNull),
+        // append optional fields
+        withOptional = withRequired & Record.SelectFields(record, optionalFields, MissingField.Ignore),
+        // set types
+        transforms = GetTransformsForType(recordType),
+        withTypes = Record.TransformFields(withOptional, transforms, MissingField.Ignore),
+        // order the same as the record type
+        reorder = Record.ReorderFields(withTypes, fieldNames, MissingField.Ignore)
+    in
+        if (List.IsEmpty(fieldNames)) then
+            record
+        else
+            reorder;
+
+List.ChangeType = (list as list, listType as type) =>
+    if (not Type.Is(listType, type list)) then
+        error "type argument should be a list type"
+    else
+        let
+            listItemType = Type.ListItem(listType),
+            transform = GetTransformByType(listItemType),
+            modifiedValues = List.Transform(list, transform),
+            typed = Value.ReplaceType(modifiedValues, listType)
+        in
+            typed;
+
+// Returns a table type for the provided schema table
+Schema.ToTableType = (schema as table) as type =>
+    let
+        toList = List.Transform(schema[Type], (t) => [Type = t, Optional = false]),
+        toRecord = Record.FromList(toList, schema[Name]),
+        toType = Type.ForRecord(toRecord, false),
+        previousMeta = Value.Metadata(schema)
+    in
+        type table (toType) meta previousMeta;
+
+// Returns a list of transformations that can be passed to Table.TransformColumns, or Record.TransformFields
+// Format: {"Column", (f) => ...} .... ex: {"A", Number.From}
+GetTransformsForType = (_type as type) as list =>
+    let
+        fieldsOrColumns =
+            if (Type.Is(_type, type record)) then
+                Type.RecordFields(_type)
+            else if (Type.Is(_type, type table)) then
+                Type.RecordFields(Type.TableRow(_type))
+            else
+                error "GetTransformsForType: record or table type expected",
+        toTable = Record.ToTable(fieldsOrColumns),
+        transformColumn = Table.AddColumn(
+            toTable, "Transform", each GetTransformByType([Value][Type]), Function.Type
+        ),
+        transformMap = Table.ToRows(Table.SelectColumns(transformColumn, {"Name", "Transform"}))
+    in
+        transformMap;
+
+GetTransformByType = (_type as type) as function =>
+    if (Type.Is(_type, type number)) then
+        Number.From
+    else if (Type.Is(_type, type text)) then
+        Text.From
+    else if (Type.Is(_type, type date)) then
+        Date.From
+    else if (Type.Is(_type, type datetime)) then
+        DateTime.From
+    else if (Type.Is(_type, type duration)) then
+        Duration.From
+    else if (Type.Is(_type, type datetimezone)) then
+        DateTimeZone.From
+    else if (Type.Is(_type, type logical)) then
+        Logical.From
+    else if (Type.Is(_type, type time)) then
+        Time.From
+    else if (Type.Is(_type, type record)) then
+        (t) => if (t <> null) then @Record.ChangeType(t, _type) else t
+    else if (Type.Is(_type, type table)) then
+        (t) => if (t <> null) then @Table.ChangeType(t, _type) else t
+    else if (Type.Is(_type, type list)) then
+        (t) => if (t <> null) then @List.ChangeType(t, _type) else t
+    else
+        (t) => t;
