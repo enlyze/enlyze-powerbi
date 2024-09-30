@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="BuildMez">
-  <PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <OutputPath>$(MSBuildProjectDirectory)\bin\AnyCPU\Debug\</OutputPath>
     <IntermediateOutputPath>$(MSBuildProjectDirectory)\obj\</IntermediateOutputPath>
+    <MezIntermediatePath>$(IntermediateOutputPath)MEZ\</MezIntermediatePath>
+    <MezOutputPath>$(OutputPath)enlyze-powerbi.mez</MezOutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>$(MSBuildProjectDirectory)\bin\AnyCPU\Release\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\obj\Release\</IntermediateOutputPath>
     <MezIntermediatePath>$(IntermediateOutputPath)MEZ\</MezIntermediatePath>
     <MezOutputPath>$(OutputPath)enlyze-powerbi.mez</MezOutputPath>
   </PropertyGroup>
