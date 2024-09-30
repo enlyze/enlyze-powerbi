@@ -13,6 +13,8 @@ let
                             Detail = [File = fileName, Error = e]
                         ],
     MachineProductivityMetrics = loadModule("MachineProductivityMetrics.pqm"),
+    TableSchemas = loadModule("TableSchemas.pqm"),
+    Table.ChangeType = loadModule("Table.ChangeType.pqm"),
     ExpandMetric = (tbl as table, fieldName as text) as table =>
         Table.ExpandRecordColumn(
             tbl, fieldName, {"score", "time_loss"}, {fieldName & "_score", fieldName & "_time_loss"}
@@ -33,20 +35,20 @@ let
             columnNames = Table.ColumnNames(expandedTable),
             machinesWithMetrics = Table.AddColumn(
                 expandedTable,
-                "Productivity Metrics",
+                "productivity_metrics",
                 (row) =>
                     (start as datetimezone, end as datetimezone, resolution as text) =>
                         MachineProductivityMetrics(Table.FromRecords({row}), start, end, resolution)
             )
         in
-            machinesWithMetrics,
+            Table.ChangeType(machinesWithMetrics, TableSchemas[MachinesTableSchema]),
     TransformSites = (sites as list) as table =>
         let
             sitesTable = Table.FromList(sites, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
             namedTable = Value.ReplaceMetadata(sitesTable, Value.Metadata(sitesTable) & [Name = "Sites"]),
             expandedTable = Table.ExpandRecordColumn(namedTable, "Column1", {"uuid", "name", "address"})
         in
-            expandedTable,
+            Table.ChangeType(expandedTable, TableSchemas[SitesTableSchema]),
     TransformProductionRuns = (productionRuns as list) as table =>
         let
             productionRunsTable = Table.FromList(
@@ -99,7 +101,7 @@ let
                 {"max_run_speed_value", "max_run_speed_start", "max_run_speed_end", "max_run_speed_unit"}
             )
         in
-            expandedMaxRunSpeed,
+            Table.ChangeType(expandedMaxRunSpeed, TableSchemas[ProductionRunsTableSchema]),
     TransformDowntimes = (downtimes as list) as table =>
         let
             downtimesTable = Table.FromList(downtimes, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
@@ -120,7 +122,7 @@ let
                 {"reason_uuid", "reason_name", "reason_category"}
             )
         in
-            expandedReason,
+            Table.ChangeType(expandedReason, TableSchemas[DowntimesTableSchema]),
     TransformProductivityMetrics = (productivityMetrics as list) as table =>
         let
             productivityMetricsTable = Table.FromList(
@@ -158,7 +160,7 @@ let
                 }
             )
         in
-            localizedTable
+            Table.ChangeType(localizedTable, TableSchemas[ProductivityMetricsTableSchema])
 in
     [
         TransformMachines = TransformMachines,
