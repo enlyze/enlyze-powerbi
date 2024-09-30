@@ -12,26 +12,10 @@ let
                             Message.Parameters = {fileName, e[Reason], e[Message]},
                             Detail = [File = fileName, Error = e]
                         ],
+    TableSchema = loadModule("TableSchemas.pqm")[ProductivityMetricsTableSchema],
     DateTimeRanges = loadModule("DateTimeRanges.pqm"),
     PostRequest = loadModule("ApiClient.pqm")[PostRequest],
     TransformProductivityMetrics = loadModule("Transforms.pqm")[TransformProductivityMetrics],
-    ProductivityMetricsTableSchema = type table [
-        start = datetimezone,
-        end = datetimezone,
-        machine = text,
-        availability_score = nullable number,
-        availability_time_loss = nullable number,
-        performance_score = nullable number,
-        performance_time_loss = nullable number,
-        quality_score = nullable number,
-        quality_time_loss = nullable number,
-        productivity_score = nullable number,
-        productivity_time_loss = nullable number,
-        quantity_scrap_value = nullable number,
-        quantity_scrap_unit = nullable text,
-        quantity_yield_value = nullable number,
-        quantity_yield_unit = nullable text
-    ],
     MachineProductivityMetrics = (machines as table, start as datetimezone, end as datetimezone, resolution as text) as table =>
         let
             machineUuids = Table.Column(machines, "uuid"),
@@ -55,7 +39,7 @@ let
             _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateTimeRanges)),
             accumulated = List.Accumulate(
                 machineUuids,
-                #table(ProductivityMetricsTableSchema, {}),
+                #table(TableSchema, {}),
                 (state, machineUuid) =>
                     let
                         responseData = PostRequest(
