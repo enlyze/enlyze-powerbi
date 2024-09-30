@@ -151,16 +151,9 @@ let
             expandedQuality = ExpandQuality(expandedPerformance),
             expandedProductivity = ExpandProductivity(expandedQuality),
             expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
-            expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap),
-            localizedTable = Table.TransformColumns(
-                expandedQuantityYield,
-                {
-                    {"start", each DateTimeZone.ToLocal(DateTimeZone.From(_))},
-                    {"end", each DateTimeZone.ToLocal(DateTimeZone.From(_))}
-                }
-            )
+            expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap)
         in
-            Table.ChangeType(localizedTable, TableSchemas[ProductivityMetricsTableSchema])
+            Table.ChangeType(expandedQuantityYield, TableSchemas[ProductivityMetricsTableSchema])
 in
     [
         TransformMachines = TransformMachines,
