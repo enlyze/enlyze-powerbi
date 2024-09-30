@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <MezContent Include="enlyze.pq" />
+    <MezContent Include="*.pqm" />
     <MezContent Include="ENLYZE16.png" />
     <MezContent Include="ENLYZE20.png" />
     <MezContent Include="ENLYZE24.png" />

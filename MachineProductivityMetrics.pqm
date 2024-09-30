@@ -1,0 +1,73 @@
+let
+    loadModule = (fileName as text) =>
+        let
+            binary = Extension.Contents(fileName), asText = Text.FromBinary(binary)
+        in
+            try
+                Expression.Evaluate(asText, #shared) catch (e) =>
+                    error
+                        [
+                            Reason = "Extension.LoadModule Failure",
+                            Message.Format = "Loading '#{0}' failed - '#{1}': '#{2}'",
+                            Message.Parameters = {fileName, e[Reason], e[Message]},
+                            Detail = [File = fileName, Error = e]
+                        ],
+    DateTimeRanges = loadModule("DateTimeRanges.pqm"),
+    PostRequest = loadModule("ApiClient.pqm")[PostRequest],
+    TransformProductivityMetrics = loadModule("Transforms.pqm")[TransformProductivityMetrics],
+    ProductivityMetricsTableSchema = type table [
+        start = datetimezone,
+        end = datetimezone,
+        machine = text,
+        availability_score = nullable number,
+        availability_time_loss = nullable number,
+        performance_score = nullable number,
+        performance_time_loss = nullable number,
+        quality_score = nullable number,
+        quality_time_loss = nullable number,
+        productivity_score = nullable number,
+        productivity_time_loss = nullable number,
+        quantity_scrap_value = nullable number,
+        quantity_scrap_unit = nullable text,
+        quantity_yield_value = nullable number,
+        quantity_yield_unit = nullable text
+    ],
+    MachineProductivityMetrics = (machines as table, start as datetimezone, end as datetimezone, resolution as text) as table =>
+        let
+            machineUuids = Table.Column(machines, "uuid"),
+            validResolutions = {"hourly", "daily", "weekly", "monthly"},
+            validatedResolution =
+                if List.Contains(validResolutions, resolution) then
+                    resolution
+                else
+                    error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
+            dateTimeRanges =
+                if validatedResolution = "hourly" then
+                    DateTimeRanges[ToHourlyDateTimeRanges](start, end, resolution)
+                else if validatedResolution = "daily" then
+                    DateTimeRanges[ToDailyDateTimeRanges](start, end)
+                else if validatedResolution = "weekly" then
+                    DateTimeRanges[ToWeeklyDateTimeRanges](start, end)
+                else if validatedResolution = "monthly" then
+                    DateTimeRanges[ToMonthlyDateTimeRanges](start, end)
+                else
+                    error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
+            _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateTimeRanges)),
+            accumulated = List.Accumulate(
+                machineUuids,
+                #table(ProductivityMetricsTableSchema, {}),
+                (state, machineUuid) =>
+                    let
+                        responseData = PostRequest(
+                            "/machines/" & machineUuid & "/productivity-metrics", [datetime_ranges = dateTimeRanges]
+                        ),
+                        responseDataWithMachine = List.Transform(
+                            responseData, (r) => Record.AddField(r, "machine", machineUuid)
+                        )
+                    in
+                        Table.Combine({state, TransformProductivityMetrics(responseDataWithMachine)})
+            )
+        in
+            accumulated
+in
+    MachineProductivityMetrics

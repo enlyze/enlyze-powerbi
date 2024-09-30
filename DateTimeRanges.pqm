@@ -1,0 +1,136 @@
+let
+    ToIso8601 = (dt as datetimezone) as text => DateTimeZone.ToText(dt, [Format = "O", Culture = "en-US"]),
+    ToHourlyDateTimeRanges = (start as datetimezone, end as datetimezone, resolution as text) as list =>
+        let
+            roundToHour = (dt as datetimezone) =>
+                #datetimezone(
+                    Date.Year(dt),
+                    Date.Month(dt),
+                    Date.Day(dt),
+                    Time.Hour(dt),
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+            durationOneHour = #duration(0, 1, 0, 0),
+            addOneHour = (dt as datetimezone) => DateTimeZone.From(dt + durationOneHour),
+            roundedStart = roundToHour(start),
+            hourStarts = List.Generate(() => roundedStart, each _ <= end, each addOneHour(_)),
+            ranges = List.Transform(
+                hourStarts, (hourStart) => [
+                    start = ToIso8601(hourStart),
+                    end = ToIso8601(addOneHour(hourStart))
+                ]
+            )
+        in
+            ranges,
+    ToDailyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
+        let
+            roundToDay = (dt as datetimezone) =>
+                #datetimezone(
+                    Date.Year(dt),
+                    Date.Month(dt),
+                    Date.Day(dt),
+                    0,
+                    0,
+                    0,
+                    DateTimeZone.ZoneHours(dt),
+                    DateTimeZone.ZoneMinutes(dt)
+                ),
+            addDay = (dt as datetimezone) => DateTimeZone.From(Date.AddDays(dt, 1)),
+            dayStarts = List.Generate(() => roundToDay(start), each Date.From(_) <= Date.From(end), each addDay(_)),
+            ranges = List.Transform(
+                dayStarts, (dayStart) => [
+                    start = ToIso8601(dayStart),
+                    end = ToIso8601(addDay(dayStart))
+                ]
+            )
+        in
+            ranges,
+    ToWeeklyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
+        let
+            roundToWeekStart = (dt as datetimezone) =>
+                let
+                    dayOfWeek = Date.DayOfWeek(Date.From(dt), Day.Monday) + 1,
+                    mondayOfWeek = Date.AddDays(Date.From(dt), - (dayOfWeek - 1))
+                in
+                    #datetimezone(
+                        Date.Year(mondayOfWeek),
+                        Date.Month(mondayOfWeek),
+                        Date.Day(mondayOfWeek),
+                        0,
+                        0,
+                        0,
+                        DateTimeZone.ZoneHours(dt),
+                        DateTimeZone.ZoneMinutes(dt)
+                    ),
+            endOfWeek = (dt as datetimezone) =>
+                let
+                    nextMonday = roundToWeekStart(dt) + #duration(7, 0, 0, 0)
+                in
+                    #datetimezone(
+                        Date.Year(nextMonday),
+                        Date.Month(nextMonday),
+                        Date.Day(nextMonday),
+                        0,
+                        0,
+                        0,
+                        DateTimeZone.ZoneHours(dt),
+                        DateTimeZone.ZoneMinutes(dt)
+                    ),
+            weekStarts = List.Generate(
+                () => roundToWeekStart(start), each _ <= end, each DateTimeZone.From(Date.AddDays(_, 7))
+            ),
+            ranges = List.Transform(
+                weekStarts, (weekStart) => [
+                    start = ToIso8601(weekStart),
+                    end = ToIso8601(endOfWeek(weekStart))
+                ]
+            )
+        in
+            ranges,
+    ToMonthlyDateTimeRanges = (start as datetimezone, end as datetimezone) as list =>
+        let
+            roundToMonthStart = (dt as datetimezone) =>
+                #datetimezone(
+                    Date.Year(dt), Date.Month(dt), 1, 0, 0, 0, DateTimeZone.ZoneHours(dt), DateTimeZone.ZoneMinutes(
+                        dt
+                    )
+                ),
+            startOfNextMonth = (dt as datetimezone) =>
+                let
+                    nextMonth = Date.AddMonths(Date.From(dt), 1)
+                in
+                    #datetimezone(
+                        Date.Year(nextMonth),
+                        Date.Month(nextMonth),
+                        1,
+                        0,
+                        0,
+                        0,
+                        DateTimeZone.ZoneHours(dt),
+                        DateTimeZone.ZoneMinutes(dt)
+                    ),
+            monthStarts = List.Generate(
+                () => roundToMonthStart(start), each _ <= end, each DateTimeZone.From(Date.AddMonths(_, 1))
+            ),
+            ranges = List.Transform(
+                monthStarts,
+                (monthStart) =>
+                    [
+                        start = ToIso8601(monthStart),
+                        end = ToIso8601(
+                            if end <= startOfNextMonth(monthStart) then end else startOfNextMonth(monthStart)
+                        )
+                    ]
+            )
+        in
+            ranges
+in
+    [
+        ToHourlyDateTimeRanges = ToHourlyDateTimeRanges,
+        ToDailyDateTimeRanges = ToDailyDateTimeRanges,
+        ToWeeklyDateTimeRanges = ToWeeklyDateTimeRanges,
+        ToMonthlyDateTimeRanges = ToMonthlyDateTimeRanges
+    ]
