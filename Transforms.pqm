@@ -153,12 +153,22 @@ let
             expandedQuantityScrap = ExpandQuantityScrap(expandedProductivity),
             expandedQuantityYield = ExpandQuantityYield(expandedQuantityScrap)
         in
-            Table.ChangeType(expandedQuantityYield, TableSchemas[ProductivityMetricsTableSchema])
+            Table.ChangeType(expandedQuantityYield, TableSchemas[ProductivityMetricsTableSchema]),
+    TransformProducts = (products as list) as table =>
+        let
+            productsTable = Table.FromList(products, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+            namedTable = Value.ReplaceMetadata(productsTable, Value.Metadata(productsTable) & [Name = "Products"]),
+            expandedTable = Table.ExpandRecordColumn(
+                namedTable, "Column1", {"uuid", "code", "name"}, {"uuid", "external_id", "name"}
+            )
+        in
+            Table.ChangeType(expandedTable, TableSchemas[ProductsTableSchema])
 in
     [
         TransformMachines = TransformMachines,
         TransformDowntimes = TransformDowntimes,
         TransformProductionRuns = TransformProductionRuns,
         TransformSites = TransformSites,
-        TransformProductivityMetrics = TransformProductivityMetrics
+        TransformProductivityMetrics = TransformProductivityMetrics,
+        TransformProducts = TransformProducts
     ]
