@@ -16,23 +16,28 @@ let
     DateTimeRanges = loadModule("DateTimeRanges.pqm"),
     PostRequest = loadModule("ApiClient.pqm")[PostRequest],
     TransformProductivityMetrics = loadModule("Transforms.pqm")[TransformProductivityMetrics],
+    FunctionSignature = type function (
+        machines as table,
+        start as datetimezone,
+        end as datetimezone,
+        resolution as (
+            type text meta [
+                Documentation.Description = "Select a resolution.",
+                Documentation.AllowedValues = {"hourly", "daily", "weekly", "monthly"}
+            ]
+        )
+    ) as table,
     MachineProductivityMetrics = (machines as table, start as datetimezone, end as datetimezone, resolution as text) as table =>
         let
             machineUuids = Table.Column(machines, "uuid"),
-            validResolutions = {"hourly", "daily", "weekly", "monthly"},
-            validatedResolution =
-                if List.Contains(validResolutions, resolution) then
-                    resolution
-                else
-                    error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
             dateTimeRanges =
-                if validatedResolution = "hourly" then
+                if resolution = "hourly" then
                     DateTimeRanges[ToHourlyDateTimeRanges](start, end, resolution)
-                else if validatedResolution = "daily" then
+                else if resolution = "daily" then
                     DateTimeRanges[ToDailyDateTimeRanges](start, end)
-                else if validatedResolution = "weekly" then
+                else if resolution = "weekly" then
                     DateTimeRanges[ToWeeklyDateTimeRanges](start, end)
-                else if validatedResolution = "monthly" then
+                else if resolution = "monthly" then
                     DateTimeRanges[ToMonthlyDateTimeRanges](start, end)
                 else
                     error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
@@ -52,6 +57,7 @@ let
                         Table.Combine({state, TransformProductivityMetrics(responseDataWithMachine)})
             )
         in
-            accumulated
+            accumulated,
+    MachineProductivityMetricsCorrectType = Value.ReplaceType(MachineProductivityMetrics, FunctionSignature)
 in
-    MachineProductivityMetrics
+    MachineProductivityMetricsCorrectType
