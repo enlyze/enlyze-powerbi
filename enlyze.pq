@@ -15,15 +15,10 @@ loadModule = (fileName as text) =>
                         Detail = [File = fileName, Error = e]
                     ];
 
-// Table Helpers
-Table.ChangeType = loadModule("Table.ChangeType.pqm");
 Table.ToNavigationTable = loadModule("Table.ToNavigationTable.pqm");
 
 // API Client helpers
-ApiClientHelpers = loadModule("ApiClient.pqm");
-FetchPage = ApiClientHelpers[FetchPage];
-FetchPaginated = ApiClientHelpers[FetchPaginated];
-PostRequest = ApiClientHelpers[PostRequest];
+FetchPaginated = loadModule("ApiClient.pqm")[FetchPaginated];
 
 // API Response Conversion
 Transformers = loadModule("Transforms.pqm");

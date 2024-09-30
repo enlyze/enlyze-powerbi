@@ -47,7 +47,6 @@ let
             data
 in
     [
-        FetchPage = FetchPage,
         FetchPaginated = FetchPaginated,
         PostRequest = PostRequest
     ]
