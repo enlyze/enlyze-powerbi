@@ -27,6 +27,7 @@ TransformMachines = Transformers[TransformMachines];
 TransformDowntimes = Transformers[TransformDowntimes];
 TransformProductionRuns = Transformers[TransformProductionRuns];
 TransformProductivityMetrics = Transformers[TransformProductivityMetrics];
+TransformProducts = Transformers[TransformProducts];
 
 MachineProductivityMetrics = loadModule("MachineProductivityMetrics.pqm");
 
@@ -62,6 +63,14 @@ shared enlyze.Contents = () =>
                         true
                     },
                     {"Sites", "sites", TransformSites(FetchPaginated("/sites", null)), "Table", "Table", true},
+                    {
+                        "Products",
+                        "products",
+                        TransformProducts(FetchPaginated("/products", null)),
+                        "Table",
+                        "Table",
+                        true
+                    },
                     {
                         "Machine Productivity Metrics",
                         "machineProductivityMetrics",

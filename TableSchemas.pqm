@@ -33,6 +33,7 @@ let
         max_run_speed_start = nullable datetimezone,
         max_run_speed_end = nullable datetimezone
     ],
+    ProductsTableSchema = type table [uuid = text, external_id = text, name = text],
     DowntimesTableSchema = type table [
         uuid = text,
         machine = text,
@@ -69,5 +70,6 @@ in
         MachinesTableSchema = MachinesTableSchema,
         ProductionRunsTableSchema = ProductionRunsTableSchema,
         DowntimesTableSchema = DowntimesTableSchema,
-        ProductivityMetricsTableSchema = ProductivityMetricsTableSchema
+        ProductivityMetricsTableSchema = ProductivityMetricsTableSchema,
+        ProductsTableSchema = ProductsTableSchema
     ]
