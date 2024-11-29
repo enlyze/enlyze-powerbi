@@ -22,7 +22,7 @@ let
             queryString = Uri.BuildQueryString(queryParamsNonNull),
             apiUrlWithQueryParams = if Text.Length(queryString) > 0 then apiUrl & "?" & queryString else apiUrl,
             response = Web.Contents(
-                apiUrlWithQueryParams, [Headers = headers, ManualStatusHandling = {400, 401, 403, 404, 422, 500}]
+                apiUrlWithQueryParams, [Headers = headers, ManualStatusHandling = {400, 401, 403, 404, 422, 500, 503}]
             ),
             statusCode = Value.Metadata(response)[Response.Status],
             parsedResponse =
