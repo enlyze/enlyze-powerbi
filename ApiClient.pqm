@@ -21,7 +21,15 @@ let
             queryParamsNonNull = Record.RemoveFields(combinedQueryParams, nullValueFields),
             queryString = Uri.BuildQueryString(queryParamsNonNull),
             apiUrlWithQueryParams = if Text.Length(queryString) > 0 then apiUrl & "?" & queryString else apiUrl,
-            parsedResponse = Json.Document(Web.Contents(apiUrlWithQueryParams, [Headers = headers]))
+            response = Web.Contents(
+                apiUrlWithQueryParams, [Headers = headers, ManualStatusHandling = {400, 401, 403, 404, 422, 500}]
+            ),
+            statusCode = Value.Metadata(response)[Response.Status],
+            parsedResponse =
+                if statusCode = 200 then
+                    Json.Document(response)
+                else
+                    error "HTTP Error: " & Text.From(statusCode) & ". Response body: " & Text.FromBinary(response)
         in
             parsedResponse,
     FetchPaginated = (apiPath as text, cursor as nullable text, optional queryParams as nullable record) as list =>
