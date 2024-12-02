@@ -101,6 +101,8 @@ shared enlyze.Contents = () =>
     in
         NavTable;
 
+shared enlyze.ConnectionTest = () => enlyze.Contents(){[Key = "sites"]}[Data];
+
 enlyze = [
     Authentication = [
         Key = [
@@ -108,7 +110,8 @@ enlyze = [
             KeyLabel = "ENLYZE API Key"
         ]
     ],
-    Label = "ENLYZE"
+    Label = "ENLYZE",
+    TestConnection = (dataSourcePath) => {"enlyze.ConnectionTest"}
 ];
 
 enlyze.Publish = [
