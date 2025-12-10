@@ -20,11 +20,13 @@ let
     ) as table =>
         let
             resampling_interval_seconds =
-                if resolution = "1m" then
+                if resolution = "10s" then
+                    null
+                else if resolution = "1m" then
                     60
                 else if resolution = "10m" then
                     600
-                else if resolution = "30m " then
+                else if resolution = "30m" then
                     1800
                 else if resolution = "1h" then
                     3600
@@ -35,7 +37,11 @@ let
             variablesByMachine = Table.Group(
                 variables, {"machine"}, {{"GroupedVariables", each _, type table [uuid = text, machine = text]}}
             ),
-            bodyBase = [start = start, end = end, resampling_interval = resampling_interval_seconds],
+            bodyBase =
+                if resampling_interval_seconds = null then
+                    [start = start, end = end]
+                else
+                    [start = start, end = end, resampling_interval = resampling_interval_seconds],
             fetchTimeseriesForMachine = (variablesByMachine as table, machineUuid as text) as table =>
                 let
                     variableCount = Table.RowCount(variablesByMachine),

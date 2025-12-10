@@ -7,7 +7,7 @@ let
             type text meta [
                 Documentation.Label = "Resolution",
                 Documentation.Description = "Select a resolution.",
-                Documentation.AllowedValues = {"1m", "10m", "30m", "1h", "1d", "1w"}
+                Documentation.AllowedValues = {"10s", "1m", "10m", "30m", "1h", "1d", "1w"}
             ]
         ),
         resampling_method as (
@@ -25,7 +25,7 @@ let
             type text meta [
                 Documentation.Label = "Resolution",
                 Documentation.Description = "Select a resolution.",
-                Documentation.AllowedValues = {"1m", "10m", "30m", "1h", "1d", "1w"}
+                Documentation.AllowedValues = {"10s", "1m", "10m", "30m", "1h", "1d", "1w"}
             ]
         ),
         resampling_method as (
