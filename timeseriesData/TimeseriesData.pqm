@@ -26,6 +26,8 @@ let
                     60
                 else if resolution = "10m" then
                     600
+                else if resolution = "15m" then
+                    900
                 else if resolution = "30m" then
                     1800
                 else if resolution = "1h" then
