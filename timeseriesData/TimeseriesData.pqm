@@ -62,7 +62,11 @@ let
                                 machine = machineUuid,
                                 variables = List.Transform(
                                     Table.ToRecords(validatedVariablesByMachine),
-                                    each [uuid = _[uuid], resampling_method = resampling_method]
+                                    each
+                                        if resampling_interval_seconds = null then
+                                            [uuid = _[uuid]]
+                                        else
+                                            [uuid = _[uuid], resampling_method = resampling_method]
                                 )
                             ]
                         }
