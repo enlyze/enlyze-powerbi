@@ -32,6 +32,7 @@ let
                 else
                     error "Invalid resolution. Please choose 'hourly', 'daily', 'weekly', or 'monthly'.",
             _ = Diagnostics.Trace(TraceLevel.Error, "Generated Date Ranges:", Text.From(dateTimeRanges)),
+            // 31 is the limit imposed by the API, any bigger request needs to be split
             maxIntervalsPerRequest = 31,
             dateTimeRangeBatches = List.Split(dateTimeRanges, maxIntervalsPerRequest),
             accumulated = List.Accumulate(
